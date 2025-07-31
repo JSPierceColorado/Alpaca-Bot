@@ -18,11 +18,21 @@ def get_btc_price():
 
     return current_price, lower_bound
 
-def place_buy_order(api):
-    # Replace 'BTC/USD' with a real Alpaca symbol (e.g., 'SPY' or 'AAPL')
+def place_buy_order(api, percent=0.10):
+    account = api.get_account()
+    available_cash = float(account.cash)
+    amount_to_trade = round(available_cash * percent, 2)
+
+    print(f"Available cash: ${available_cash:.2f}")
+    print(f"Buying ${amount_to_trade:.2f} worth of BTC/USD")
+
+    if amount_to_trade < 1:
+        print("Not enough funds to place a trade.")
+        return
+
     order = api.submit_order(
         symbol="BTC/USD",
-        notional=10,  # Buy $10 worth
+        notional=amount_to_trade,
         side="buy",
         type="market",
         time_in_force="gtc"
@@ -40,8 +50,9 @@ def main():
     current_price, lower_band = get_btc_price()
 
     if current_price < lower_band:
-        print("Dip detected. Placing order.")
-        place_buy_order(api)
+    print("Dip detected. Placing order.")
+    place_buy_order(api, percent=0.10)  # ← 10% of cash
+
     else:
         print("No trade signal.")
 
