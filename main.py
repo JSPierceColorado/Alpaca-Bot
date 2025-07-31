@@ -1,3 +1,6 @@
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+from datetime import datetime
 import os
 import yfinance as yf
 import pandas as pd
@@ -65,3 +68,20 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+def log_trade(symbol, price, notional, cash_left):
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+    client = gspread.authorize(creds)
+    
+    sheet = client.open("Trading Log").worksheet("log")
+    row = [
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        symbol,
+        "BUY",
+        f"{price:.2f}",
+        f"{notional:.2f}",
+        f"{cash_left:.2f}"
+    ]
+    sheet.append_row(row)
+    print("📋 Trade logged to Google Sheets.")
