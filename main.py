@@ -6,16 +6,18 @@ import os
 import json
 from io import StringIO
 from datetime import datetime
+import requests
 
 print("✅ main.py launched successfully")
 
-# Set up a basic user-agent for yfinance requests
-import requests
+# Patch yfinance to use a custom User-Agent
 requests_session = requests.Session()
 requests_session.headers.update({'User-Agent': 'Mozilla/5.0'})
-yf.shared._requests = requests_session  # override default session
+yf.shared._requests = requests_session
 
 # Connect to Alpaca LIVE account
+order = None  # Default to no order placed
+
 try:
     print("Connecting to Alpaca LIVE environment...")
 
@@ -34,29 +36,14 @@ try:
         notional=1,
         side="buy",
         type="market",
-        time_in_force="day"  # ✅ REQUIRED for fractional orders
+        time_in_force="day"  # Required for fractional orders
     )
     print("✅ Order submitted:", order.id)
 
 except Exception as e:
     print("❌ Alpaca LIVE trade failed:", e)
-    order = None
 
 # yfinance check
 try:
     print("Fetching AAPL from yfinance...")
-    data = yf.Ticker("AAPL").history(period="1d")
-    print(data)
-except Exception as e:
-    print("❌ yfinance failed:", e)
-
-# Google Sheets logging
-try:
-    print("Attempting to open Google Sheet...")
-
-    creds_json = os.getenv("GOOGLE_CREDS_JSON")
-    if not creds_json:
-        raise ValueError("GOOGLE_CREDS_JSON environment variable not set.")
-
-    creds_dict = json.load(StringIO(creds_json))
-    gc = gspread.service_account_from_dict(creds_dict)
+    data = yf.Ti
