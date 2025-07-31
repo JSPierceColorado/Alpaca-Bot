@@ -5,45 +5,35 @@ import gspread
 import os
 import json
 from io import StringIO
-import requests
 
 print("✅ main.py launched successfully")
 
-# -------------------------------
-# Fix for yfinance blocked requests
-# -------------------------------
+# yfinance User-Agent workaround
 print("🔧 Setting up custom User-Agent for yfinance...")
-session = requests.Session()
-session.headers.update({"User-Agent": "Mozilla/5.0"})
-yf.utils.requests = session
+yf.utils.get_yf_rh = lambda: {"User-Agent": "Mozilla/5.0"}
 
-# -------------------------------
-# Alpaca API check (will fail until keys added)
-# -------------------------------
+# Alpaca API connection check
 try:
     print("Attempting Alpaca API connection...")
-    api = tradeapi.REST()  # Will auto-read APCA_API_KEY_ID and APCA_API_SECRET_KEY from env
+    api = tradeapi.REST(base_url="https://paper-api.alpaca.markets")  # No keys for dry run
     clock = api.get_clock()
     print("Alpaca market clock:", clock)
 except Exception as e:
     print("❌ Alpaca API check failed:", e)
 
-# -------------------------------
-# yfinance check
-# -------------------------------
+# yfinance check using download()
 try:
     print("Fetching AAPL from yfinance...")
-    data = yf.Ticker("AAPL").history(period="1d")
+    data = yf.download("AAPL", period="1d")
     if data.empty:
         print("AAPL: No price data found, symbol may be delisted (period=1d)")
     else:
+        print("AAPL price data:")
         print(data)
 except Exception as e:
     print("❌ yfinance failed:", e)
 
-# -------------------------------
-# Google Sheets check via env var
-# -------------------------------
+# Google Sheets check using gspread with env var
 try:
     print("Attempting to open Google Sheet...")
 
@@ -54,10 +44,10 @@ try:
     creds_dict = json.load(StringIO(creds_json))
     gc = gspread.service_account_from_dict(creds_dict)
 
-    sh = gc.open("Trading Log")      # ✅ Your actual sheet title
-    worksheet = sh.worksheet("log")  # ✅ Your actual tab name
-    worksheet.update("A1", [["✅ Connected at runtime!"]])  # ✅ 2D list format for gspread
-    print("✅ Google Sheet updated successfully.")
+    sh = gc.open("Trading Log")      # ✅ Sheet title
+    worksheet = sh.worksheet("log")  # ✅ Tab name
 
+    worksheet.update(range_name="A1", values=[["✅ Connected at runtime!"]])
+    print("✅ Google Sheet updated successfully.")
 except Exception as e:
     print("❌ Gspread operation failed:", e)
