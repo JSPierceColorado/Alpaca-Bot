@@ -3,3 +3,6 @@ pandas
 alpaca-trade-api
 gspread
 oauth2client
+requests==2.31.0
+urllib3==1.26.16
+six==1.16.0
