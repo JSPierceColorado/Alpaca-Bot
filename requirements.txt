@@ -1,5 +1,5 @@
---only-binary :all:
 yfinance
 pandas
 alpaca-trade-api
 gspread
+peewee>=3.16.2
