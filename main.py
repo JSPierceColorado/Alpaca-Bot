@@ -38,7 +38,7 @@ try:
 
     sh = gc.open("Trading Log")      # ✅ Your actual sheet title
     worksheet = sh.worksheet("log")  # ✅ Your actual tab name
-    worksheet.update("A1", "✅ Connected at runtime!")  # ✅ Writes something
+    worksheet.update("A1", [["✅ Connected at runtime!"]])  # ✅ 2D list required
     print("✅ Google Sheet updated successfully.")
 
 except Exception as e:
