@@ -1,3 +1,4 @@
+--only-binary :all:
 yfinance
 pandas
 alpaca-trade-api==2.2.0
