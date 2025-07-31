@@ -12,7 +12,7 @@ print("✅ main.py launched successfully")
 import yfinance.shared
 yfinance.shared._USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64)"
 
-# 1. Alpaca LIVE Trade Execution for $1 BTC/USD
+# 1. Alpaca LIVE Trade Execution for $1 of VIG
 try:
     print("Connecting to Alpaca LIVE environment...")
     api = tradeapi.REST(
@@ -24,9 +24,9 @@ try:
     clock = api.get_clock()
     print("Alpaca market clock:", clock)
 
-    print("Submitting $1 fractional crypto order (BTC/USD)...")
+    print("Submitting $1 fractional stock order (VIG)...")
     order = api.submit_order(
-        symbol="BTC/USD",
+        symbol="VIG",
         notional=1,             # ✅ $1 fractional buy
         side="buy",
         type="market",
@@ -56,7 +56,7 @@ try:
 
     if order:
         worksheet.append_row([
-            "BTC/USD",
+            "VIG",
             "buy",
             "$1",
             str(order.id),
