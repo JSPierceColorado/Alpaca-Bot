@@ -9,13 +9,11 @@ from datetime import datetime
 
 print("✅ main.py launched successfully")
 
-# Set up User-Agent for yfinance to avoid blocking
+# Set up a basic user-agent for yfinance requests
 import requests
-yf.utils.requests_wraps.wraps = lambda f: f  # Patch for recent yfinance versions
-headers = {'User-Agent': 'Mozilla/5.0'}
-yf.pdr_override()
-
-print("🔧 Setting up custom User-Agent for yfinance...")
+requests_session = requests.Session()
+requests_session.headers.update({'User-Agent': 'Mozilla/5.0'})
+yf.shared._requests = requests_session  # override default session
 
 # Connect to Alpaca LIVE account
 try:
@@ -62,24 +60,3 @@ try:
 
     creds_dict = json.load(StringIO(creds_json))
     gc = gspread.service_account_from_dict(creds_dict)
-
-    sh = gc.open("Trading Log")
-    worksheet = sh.worksheet("log")
-
-    if order:
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        worksheet.append_row([
-            now,
-            order.symbol,
-            order.side,
-            order.notional,
-            order.filled_qty if order.filled_qty else "PENDING",
-            order.id
-        ])
-        print("✅ Order logged to Google Sheet.")
-    else:
-        worksheet.update(values=[["ℹ️ No order to log."]], range_name="A1")
-        print("ℹ️ No order to log.")
-
-except Exception as e:
-    print("❌ Gspread operation failed:", e)
