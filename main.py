@@ -46,4 +46,39 @@ except Exception as e:
 # yfinance check
 try:
     print("Fetching AAPL from yfinance...")
-    data = yf.Ti
+    data = yf.Ticker("AAPL").history(period="1d")
+    print(data)
+except Exception as e:
+    print("❌ yfinance failed:", e)
+
+# Google Sheets logging
+try:
+    print("Attempting to open Google Sheet...")
+
+    creds_json = os.getenv("GOOGLE_CREDS_JSON")
+    if not creds_json:
+        raise ValueError("GOOGLE_CREDS_JSON environment variable not set.")
+
+    creds_dict = json.loads(creds_json)
+    gc = gspread.service_account_from_dict(creds_dict)
+
+    sh = gc.open("Trading Log")
+    worksheet = sh.worksheet("log")
+
+    if order:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        worksheet.append_row([
+            now,
+            order.symbol,
+            order.side,
+            order.notional,
+            order.filled_qty if order.filled_qty else "PENDING",
+            order.id
+        ])
+        print("✅ Order logged to Google Sheet.")
+    else:
+        worksheet.update(values=[["ℹ️ No order to log."]], range_name="A1")
+        print("ℹ️ No order to log.")
+
+except Exception as e:
+    print("❌ Gspread operation failed:", e)
