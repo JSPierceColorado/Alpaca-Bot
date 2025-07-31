@@ -1,6 +1,6 @@
 yfinance
 pandas
-alpaca-trade-api==2.2.1
+alpaca-trade-api==2.2.0
 gspread
 oauth2client
 requests==2.31.0
