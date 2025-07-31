@@ -15,15 +15,18 @@ try:
     clock = api.get_clock()
     print("Alpaca market clock:", clock)
 except Exception as e:
-    print("❌ Alpaca API check failed:", e)
+    print("❌ Alpaca API check failed:", repr(e))
 
-# yfinance check
+# yfinance check with fallback
 try:
     print("Fetching AAPL from yfinance...")
-    data = yf.Ticker("AAPL").history(period="1d")
-    print(data)
+    ticker = yf.Ticker("AAPL")
+    data = ticker.history(period="1d", interval="1m")
+    if data.empty:
+        raise ValueError("AAPL: No data returned, symbol may be delisted or request failed.")
+    print(data.head())
 except Exception as e:
-    print("❌ yfinance failed:", e)
+    print("❌ yfinance failed:", repr(e))
 
 # Google Sheets check using environment variable
 try:
@@ -38,8 +41,6 @@ try:
 
     sh = gc.open("Trading Log")      # ✅ Your actual sheet title
     worksheet = sh.worksheet("log")  # ✅ Your actual tab name
-    worksheet.update('A1', '✅ Connected at runtime!')
-    print("✅ Google Sheet updated successfully.")
 
-except Exception as e:
-    print("❌ Gspread operation failed:", e)
+    worksheet.update("A1", "✅ Connected at runtime!")  # ✅ Fixed: Added value to write
+    print("✅ Google Sheet up
