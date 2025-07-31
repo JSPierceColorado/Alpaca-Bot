@@ -1,3 +1,5 @@
 yfinance
 pandas
 alpaca-trade-api
+gspread
+oauth2client
