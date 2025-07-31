@@ -1,3 +1,5 @@
+print("🔐 API KEY:", repr(os.environ.get("ALPACA_API_KEY")))
+print("🔐 SECRET:", repr(os.environ.get("ALPACA_SECRET_KEY")))
 import os
 import yfinance as yf
 import pandas as pd
