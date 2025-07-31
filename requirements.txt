@@ -4,3 +4,5 @@ alpaca-trade-api
 gspread
 msgpack==1.0.8
 peewee>=3.16.2
+six>=1.16.0
+urllib3<2
