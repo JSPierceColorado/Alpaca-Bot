@@ -5,21 +5,27 @@ import gspread
 import os
 import json
 from io import StringIO
+from datetime import datetime
 
 print("✅ main.py launched successfully")
 
-# Optional: Set custom User-Agent for yfinance
-import yfinance.shared
-yfinance.shared._USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64)"
+# Set up User-Agent for yfinance to avoid blocking
+import requests
+yf.utils.requests_wraps.wraps = lambda f: f  # Patch for recent yfinance versions
+headers = {'User-Agent': 'Mozilla/5.0'}
+yf.pdr_override()
 
-# 1. Alpaca LIVE Trade Execution for $1 of VIG
+print("🔧 Setting up custom User-Agent for yfinance...")
+
+# Connect to Alpaca LIVE account
 try:
     print("Connecting to Alpaca LIVE environment...")
-    api = tradeapi.REST(
-        key_id=os.getenv("APCA_API_KEY_ID"),
-        secret_key=os.getenv("APCA_API_SECRET_KEY"),
-        base_url="https://api.alpaca.markets"  # ✅ LIVE endpoint
-    )
+
+    ALPACA_KEY = os.getenv("APCA_API_KEY_ID")
+    ALPACA_SECRET = os.getenv("APCA_API_SECRET_KEY")
+    ALPACA_BASE_URL = "https://api.alpaca.markets"
+
+    api = tradeapi.REST(ALPACA_KEY, ALPACA_SECRET, base_url=ALPACA_BASE_URL)
 
     clock = api.get_clock()
     print("Alpaca market clock:", clock)
@@ -27,18 +33,26 @@ try:
     print("Submitting $1 fractional stock order (VIG)...")
     order = api.submit_order(
         symbol="VIG",
-        notional=1,             # ✅ $1 fractional buy
+        notional=1,
         side="buy",
         type="market",
-        time_in_force="gtc"
+        time_in_force="day"  # ✅ REQUIRED for fractional orders
     )
-    print("✅ Trade submitted:", order.id)
+    print("✅ Order submitted:", order.id)
 
 except Exception as e:
     print("❌ Alpaca LIVE trade failed:", e)
     order = None
 
-# 2. Google Sheets logging
+# yfinance check
+try:
+    print("Fetching AAPL from yfinance...")
+    data = yf.Ticker("AAPL").history(period="1d")
+    print(data)
+except Exception as e:
+    print("❌ yfinance failed:", e)
+
+# Google Sheets logging
 try:
     print("Attempting to open Google Sheet...")
 
@@ -49,21 +63,22 @@ try:
     creds_dict = json.load(StringIO(creds_json))
     gc = gspread.service_account_from_dict(creds_dict)
 
-    sh = gc.open("Trading Log")      # ✅ Sheet title
-    worksheet = sh.worksheet("log")  # ✅ Tab name
-
-    worksheet.update(range_name="A1", values=[["✅ Connected at runtime!"]])
+    sh = gc.open("Trading Log")
+    worksheet = sh.worksheet("log")
 
     if order:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         worksheet.append_row([
-            "VIG",
-            "buy",
-            "$1",
-            str(order.id),
-            pd.Timestamp.now().isoformat()
+            now,
+            order.symbol,
+            order.side,
+            order.notional,
+            order.filled_qty if order.filled_qty else "PENDING",
+            order.id
         ])
-        print("✅ Trade logged to Google Sheet.")
+        print("✅ Order logged to Google Sheet.")
     else:
+        worksheet.update(values=[["ℹ️ No order to log."]], range_name="A1")
         print("ℹ️ No order to log.")
 
 except Exception as e:
