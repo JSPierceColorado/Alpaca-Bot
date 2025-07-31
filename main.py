@@ -8,32 +8,37 @@ from io import StringIO
 
 print("✅ main.py launched successfully")
 
-# yfinance User-Agent workaround
-print("🔧 Setting up custom User-Agent for yfinance...")
-yf.utils.get_yf_rh = lambda: {"User-Agent": "Mozilla/5.0"}
+# Optional: Set custom User-Agent for yfinance
+import yfinance.shared
+yfinance.shared._USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64)"
 
-# Alpaca API connection check
+# 1. Alpaca LIVE Trade Execution for $1 BTC/USD
 try:
-    print("Attempting Alpaca API connection...")
-    api = tradeapi.REST(base_url="https://paper-api.alpaca.markets")  # No keys for dry run
+    print("Connecting to Alpaca LIVE environment...")
+    api = tradeapi.REST(
+        key_id=os.getenv("APCA_API_KEY_ID"),
+        secret_key=os.getenv("APCA_API_SECRET_KEY"),
+        base_url="https://api.alpaca.markets"  # ✅ LIVE endpoint
+    )
+
     clock = api.get_clock()
     print("Alpaca market clock:", clock)
-except Exception as e:
-    print("❌ Alpaca API check failed:", e)
 
-# yfinance check using download()
-try:
-    print("Fetching AAPL from yfinance...")
-    data = yf.download("AAPL", period="1d")
-    if data.empty:
-        print("AAPL: No price data found, symbol may be delisted (period=1d)")
-    else:
-        print("AAPL price data:")
-        print(data)
-except Exception as e:
-    print("❌ yfinance failed:", e)
+    print("Submitting $1 fractional crypto order (BTC/USD)...")
+    order = api.submit_order(
+        symbol="BTC/USD",
+        notional=1,             # ✅ $1 fractional buy
+        side="buy",
+        type="market",
+        time_in_force="gtc"
+    )
+    print("✅ Trade submitted:", order.id)
 
-# Google Sheets check using gspread with env var
+except Exception as e:
+    print("❌ Alpaca LIVE trade failed:", e)
+    order = None
+
+# 2. Google Sheets logging
 try:
     print("Attempting to open Google Sheet...")
 
@@ -48,6 +53,18 @@ try:
     worksheet = sh.worksheet("log")  # ✅ Tab name
 
     worksheet.update(range_name="A1", values=[["✅ Connected at runtime!"]])
-    print("✅ Google Sheet updated successfully.")
+
+    if order:
+        worksheet.append_row([
+            "BTC/USD",
+            "buy",
+            "$1",
+            str(order.id),
+            pd.Timestamp.now().isoformat()
+        ])
+        print("✅ Trade logged to Google Sheet.")
+    else:
+        print("ℹ️ No order to log.")
+
 except Exception as e:
     print("❌ Gspread operation failed:", e)
