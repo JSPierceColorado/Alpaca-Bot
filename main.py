@@ -5,16 +5,16 @@ import gspread
 
 print("✅ main.py launched successfully")
 
-# Optional: Dry-run Alpaca API check
+# Alpaca dry-run
 try:
     print("Attempting Alpaca API connection...")
-    api = tradeapi.REST(base_url="https://paper-api.alpaca.markets")  # No key/secret for dry run
+    api = tradeapi.REST(base_url="https://paper-api.alpaca.markets")
     clock = api.get_clock()
     print("Alpaca market clock:", clock)
 except Exception as e:
     print("❌ Alpaca API check failed:", e)
 
-# Optional: Simple yfinance check
+# yfinance check
 try:
     print("Fetching AAPL from yfinance...")
     data = yf.Ticker("AAPL").history(period="1d")
@@ -22,8 +22,19 @@ try:
 except Exception as e:
     print("❌ yfinance failed:", e)
 
-# Optional: Gspread check (would need credentials to actually run)
+# gspread test
 try:
-    print("Gspread loaded.")
+    print("Authenticating with Google Sheets...")
+    gc = gspread.service_account(filename="credentials.json")
+
+    print("Opening spreadsheet...")
+    sh = gc.open("My Trading Log")  # 🔁 Replace with your actual spreadsheet name
+
+    print("Opening worksheet...")
+    worksheet = sh.worksheet("Sheet1")  # 🔁 Replace with your actual worksheet name
+
+    print("Updating cell A1...")
+    worksheet.update('A1', '✅ It works!')
+
 except Exception as e:
-    print("❌ Gspread failed:", e)
+    print("❌ Gspread operation failed:", e)
