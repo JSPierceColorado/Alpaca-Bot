@@ -2,4 +2,5 @@ yfinance
 pandas
 alpaca-trade-api==2.2.0
 gspread
-PyYAML==6.0.1
+oauth2client
+PyYAML==6.0
