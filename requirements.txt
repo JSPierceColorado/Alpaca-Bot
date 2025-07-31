@@ -2,4 +2,5 @@ yfinance
 pandas
 alpaca-trade-api
 gspread
+msgpack==1.0.8
 peewee>=3.16.2
