@@ -1,83 +1,90 @@
 import os
-import re
-import time
-import datetime
 import json
-
+import datetime
 import gspread
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
-from bs4 import BeautifulSoup
-from io import StringIO
+import re
 
-# 🟢 Startup confirmation
 print("✅ main.py launched successfully")
 
-# 📅 Daily tracking logic
-today = datetime.datetime.utcnow().date()
-TICKER_SOURCE_URL = "https://www.google.com/finance/markets/most-active"
-
-# 🔐 Load credentials from env
+# === 1. Setup Google Sheet connection ===
 try:
     creds_json = os.getenv("GOOGLE_CREDS_JSON")
     if not creds_json:
-        raise ValueError("Missing GOOGLE_CREDS_JSON")
+        raise ValueError("GOOGLE_CREDS_JSON environment variable not set")
 
-    creds_dict = json.load(StringIO(creds_json))
+    creds_dict = json.loads(creds_json)
     gc = gspread.service_account_from_dict(creds_dict)
+
     sh = gc.open("Trading Log")
     worksheet = sh.worksheet("tickers")
     print("✅ Connected to Google Sheet tab 'tickers'")
 except Exception as e:
-    print("❌ Google Sheet connection failed:", e)
-    exit(1)
+    print("❌ Failed to connect to Google Sheet:", e)
+    exit()
 
-# 🧠 Load existing tickers
-existing = worksheet.col_values(1)
-if existing and existing[0] == "date":
-    existing = existing[1:]
+# === 2. Check if today's date already logged ===
+today = datetime.datetime.utcnow().date().isoformat()
+try:
+    existing_dates = worksheet.col_values(2)
+    if today in existing_dates:
+        print("ℹ️ Already updated today. Exiting.")
+        exit()
+except Exception as e:
+    print("⚠️ Could not check for existing dates:", e)
 
-# 🌐 Set up headless Chrome browser
+# === 3. Launch headless Chrome and scrape tickers ===
 print("🌐 Launching headless browser...")
 options = Options()
 options.add_argument("--headless")
 options.add_argument("--no-sandbox")
 options.add_argument("--disable-dev-shm-usage")
-driver = webdriver.Chrome(ChromeDriverManager().install(), options=options)
+options.binary_location = "/usr/bin/chromium"
 
-# 🧭 Navigate to Google Finance
-print("🌐 Navigating to Google Finance...")
 try:
-    driver.get(TICKER_SOURCE_URL)
-    time.sleep(3)  # Let page load
+    driver = webdriver.Chrome(ChromeDriverManager().install(), options=options)
+    print("🌐 Navigating to Google Finance...")
+    driver.get("https://www.google.com/finance/markets/most-active")
+    driver.implicitly_wait(10)
 
-    soup = BeautifulSoup(driver.page_source, "html.parser")
-    anchors = soup.find_all("a", href=True)
-
+    # Extract ticker symbols using href pattern
+    elements = driver.find_elements(By.CSS_SELECTOR, 'a[href^="/finance/quote/"]')
     tickers = set()
-    for a in anchors:
-        match = re.match(r"^/quote/([A-Z.]+):[A-Z]+", a["href"])
+    for el in elements:
+        href = el.get_attribute("href")
+        match = re.search(r'/finance/quote/([A-Z.-]+):', href)
         if match:
-            ticker = match.group(1)
-            tickers.add(ticker)
+            tickers.add(match.group(1))
+
+    driver.quit()
 
     tickers = sorted(tickers)
     print(f"📊 Found {len(tickers)} tickers: {tickers}")
 
+    if not tickers:
+        print("⚠️ No tickers found.")
+        exit()
+
 except Exception as e:
     print("❌ Failed to extract tickers:", e)
-    driver.quit()
-    exit(1)
+    exit()
 
-driver.quit()
+# === 4. Append new tickers to the sheet with today’s date ===
+try:
+    existing_tickers = worksheet.col_values(1)
+    new_rows = []
+    for ticker in tickers:
+        if ticker not in existing_tickers:
+            new_rows.append([ticker, today])
 
-# 📝 Add new tickers
-new_tickers = [t for t in tickers if t not in existing]
-if not new_tickers:
-    print("ℹ️ No new tickers to add today.")
-else:
-    rows = [[today.isoformat(), t] for t in new_tickers]
-    worksheet.append_rows(rows, value_input_option="RAW")
-    print(f"✅ Added {len(rows)} new tickers to sheet.")
+    if new_rows:
+        worksheet.append_rows(new_rows)
+        print(f"✅ Added {len(new_rows)} new tickers to sheet.")
+    else:
+        print("ℹ️ No new tickers to add today.")
+
+except Exception as e:
+    print("❌ Failed to update Google Sheet:", e)
