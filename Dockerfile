@@ -1,22 +1,31 @@
 FROM python:3.12-slim
 
+# Set working directory
 WORKDIR /app
 
-# Install dependencies
-RUN apt-get update && apt-get install -y \
-    wget curl unzip gnupg \
-    chromium chromium-driver \
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    gcc \
+    libffi-dev \
+    libssl-dev \
+    chromium-driver \
+    chromium \
+    curl \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# Set Chrome driver environment
-ENV PATH="/usr/lib/chromium:/usr/bin:${PATH}"
-ENV CHROME_BIN="/usr/bin/chromium"
-ENV CHROMEDRIVER_PATH="/usr/bin/chromedriver"
+# Set environment variables for Chromium (used by Selenium)
+ENV CHROME_BIN=/usr/bin/chromium
+ENV PATH=$PATH:/usr/bin/chromium
 
-# Install Python dependencies
+# Copy and install dependencies
 COPY requirements.txt .
-RUN pip install --upgrade pip && pip install -r requirements.txt
+RUN pip install --upgrade pip
+RUN pip install -r requirements.txt
 
+# Copy application code
 COPY . .
 
+# Launch script
 CMD ["python", "main.py"]
