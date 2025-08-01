@@ -1,20 +1,16 @@
 import requests
-from bs4 import BeautifulSoup
 import gspread
 import os
 import json
 from io import StringIO
-from datetime import datetime
 
 print("✅ main.py launched successfully")
 
-# Load credentials from environment variable
+# Connect to Google Sheets
 try:
     creds_json = os.getenv("GOOGLE_CREDS_JSON")
     creds_dict = json.load(StringIO(creds_json))
     gc = gspread.service_account_from_dict(creds_dict)
-
-    # Open Google Sheet and get the 'tickers' worksheet
     sh = gc.open("Trading Log")
     worksheet = sh.worksheet("tickers")
     print("✅ Connected to Google Sheet tab 'tickers'")
@@ -22,27 +18,34 @@ except Exception as e:
     print("❌ Failed to connect to Google Sheet:", e)
     exit()
 
-# Scrape Google Finance Most Active page
-print("🌐 Scraping Google Finance most active page...")
+# Fetch from Google's internal JSON API
+print("🌐 Fetching tickers from Google Finance API...")
 try:
-    url = "https://www.google.com/finance/markets/most-active"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    response = requests.get(url, headers=headers)
-    soup = BeautifulSoup(response.content, "html.parser")
+    url = "https://www.google.com/finance/_/GoogleFinanceUi/data/batchexecute"
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"
+    }
+    data = {
+        "f.req": '[[["Mf2Ahd","[[null,[1]]]",null,"generic"]]]'
+    }
 
-    tickers = []
-    for tag in soup.select("div.YMlKec.fxKbKc"):
-        text = tag.text.strip()
-        if text and text.isupper() and len(text) <= 5:
-            tickers.append(text)
+    response = requests.post(url, headers=headers, data=data)
+    text = response.text
 
-    tickers = list(set(tickers))  # Remove duplicates
-    print(f"📊 Found {len(tickers)} tickers.")
+    # Extract ticker symbols from the response
+    tickers = list(set([
+        item.split(":")[1].split(",")[0].strip('"')
+        for item in text.split("\\n")
+        if "ticker" in item and ":" in item
+    ]))
+
+    print(f"📊 Found {len(tickers)} tickers: {tickers}")
 except Exception as e:
-    print("❌ Failed to scrape Google Finance:", e)
+    print("❌ Failed to retrieve tickers:", e)
     exit()
 
-# Add only new tickers to the sheet
+# Add only new tickers
 try:
     existing_values = worksheet.col_values(1)
     existing_tickers = set(existing_values)
