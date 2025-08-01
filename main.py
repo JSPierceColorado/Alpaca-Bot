@@ -1,50 +1,83 @@
+import os
+import re
+import time
+import datetime
+import json
+
+import gspread
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-import time
+from webdriver_manager.chrome import ChromeDriverManager
+from bs4 import BeautifulSoup
+from io import StringIO
 
-# Headless Chrome with stealth options
-print("🌐 Launching headless browser...")
-chrome_options = Options()
-chrome_options.add_argument("--headless")
-chrome_options.add_argument("--disable-gpu")
-chrome_options.add_argument("--no-sandbox")
-chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-chrome_options.add_argument("--window-size=1920,1080")
-chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                            "AppleWebKit/537.36 (KHTML, like Gecko) "
-                            "Chrome/114.0.5735.199 Safari/537.36")
+# 🟢 Startup confirmation
+print("✅ main.py launched successfully")
 
-driver = webdriver.Chrome(options=chrome_options)
+# 📅 Daily tracking logic
+today = datetime.datetime.utcnow().date()
+TICKER_SOURCE_URL = "https://www.google.com/finance/markets/most-active"
 
+# 🔐 Load credentials from env
 try:
-    print("🌐 Navigating to Google Finance...")
-    url = "https://www.google.com/finance/markets/most-active"
-    driver.get(url)
+    creds_json = os.getenv("GOOGLE_CREDS_JSON")
+    if not creds_json:
+        raise ValueError("Missing GOOGLE_CREDS_JSON")
 
-    # Let JS execute
-    time.sleep(5)
+    creds_dict = json.load(StringIO(creds_json))
+    gc = gspread.service_account_from_dict(creds_dict)
+    sh = gc.open("Trading Log")
+    worksheet = sh.worksheet("tickers")
+    print("✅ Connected to Google Sheet tab 'tickers'")
+except Exception as e:
+    print("❌ Google Sheet connection failed:", e)
+    exit(1)
 
-    # Try again to grab ticker elements
-    ticker_elements = driver.find_elements(By.CSS_SELECTOR, 'div[role="row"] a')
-    tickers = []
+# 🧠 Load existing tickers
+existing = worksheet.col_values(1)
+if existing and existing[0] == "date":
+    existing = existing[1:]
 
-    for el in ticker_elements:
-        href = el.get_attribute("href")
-        if "/quote/" in href:
-            symbol = href.split("/quote/")[-1].split(":")[-1].split("?")[0]
-            tickers.append(symbol.strip())
+# 🌐 Set up headless Chrome browser
+print("🌐 Launching headless browser...")
+options = Options()
+options.add_argument("--headless")
+options.add_argument("--no-sandbox")
+options.add_argument("--disable-dev-shm-usage")
+driver = webdriver.Chrome(ChromeDriverManager().install(), options=options)
 
-    tickers = list(set(tickers))  # Remove duplicates
+# 🧭 Navigate to Google Finance
+print("🌐 Navigating to Google Finance...")
+try:
+    driver.get(TICKER_SOURCE_URL)
+    time.sleep(3)  # Let page load
 
+    soup = BeautifulSoup(driver.page_source, "html.parser")
+    anchors = soup.find_all("a", href=True)
+
+    tickers = set()
+    for a in anchors:
+        match = re.match(r"^/quote/([A-Z.]+):[A-Z]+", a["href"])
+        if match:
+            ticker = match.group(1)
+            tickers.add(ticker)
+
+    tickers = sorted(tickers)
     print(f"📊 Found {len(tickers)} tickers: {tickers}")
 
 except Exception as e:
     print("❌ Failed to extract tickers:", e)
-    print("🔍 Page Source for Debugging:")
-    print(driver.page_source[:1000])
-
-finally:
     driver.quit()
+    exit(1)
+
+driver.quit()
+
+# 📝 Add new tickers
+new_tickers = [t for t in tickers if t not in existing]
+if not new_tickers:
+    print("ℹ️ No new tickers to add today.")
+else:
+    rows = [[today.isoformat(), t] for t in new_tickers]
+    worksheet.append_rows(rows, value_input_option="RAW")
+    print(f"✅ Added {len(rows)} new tickers to sheet.")
