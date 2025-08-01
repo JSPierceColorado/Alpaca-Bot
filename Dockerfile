@@ -2,14 +2,20 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential gcc libffi-dev libssl-dev \
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    wget curl unzip gnupg \
+    chromium chromium-driver \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+# Set Chrome driver environment
+ENV PATH="/usr/lib/chromium:/usr/bin:${PATH}"
+ENV CHROME_BIN="/usr/bin/chromium"
+ENV CHROMEDRIVER_PATH="/usr/bin/chromedriver"
 
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY . .
 
