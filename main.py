@@ -1,62 +1,77 @@
-import requests
-import gspread
 import os
 import json
-from io import StringIO
+import gspread
+import datetime
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
 
 print("✅ main.py launched successfully")
 
-# Connect to Google Sheets
+# Set up gspread
 try:
     creds_json = os.getenv("GOOGLE_CREDS_JSON")
-    creds_dict = json.load(StringIO(creds_json))
+    if not creds_json:
+        raise ValueError("GOOGLE_CREDS_JSON env var missing.")
+    creds_dict = json.loads(creds_json)
     gc = gspread.service_account_from_dict(creds_dict)
     sh = gc.open("Trading Log")
     worksheet = sh.worksheet("tickers")
     print("✅ Connected to Google Sheet tab 'tickers'")
 except Exception as e:
     print("❌ Failed to connect to Google Sheet:", e)
-    exit()
+    exit(1)
 
-# Fetch from Google's internal JSON API
-print("🌐 Fetching tickers from Google Finance API...")
+# Determine if update is needed
+now = datetime.datetime.utcnow()
+today_str = now.strftime("%Y-%m-%d")
+
+existing_dates = worksheet.col_values(2)
+if today_str in existing_dates:
+    print("ℹ️ Sheet already updated today.")
+    exit(0)
+
+# Start headless Chrome browser
 try:
-    url = "https://www.google.com/finance/_/GoogleFinanceUi/data/batchexecute"
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"
-    }
-    data = {
-        "f.req": '[[["Mf2Ahd","[[null,[1]]]",null,"generic"]]]'
-    }
+    print("🌐 Launching headless browser...")
+    options = Options()
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    driver = webdriver.Chrome(options=options)
 
-    response = requests.post(url, headers=headers, data=data)
-    text = response.text
+    print("🌐 Navigating to Google Finance...")
+    driver.get("https://www.google.com/finance/markets/most-active")
+    driver.implicitly_wait(10)
 
-    # Extract ticker symbols from the response
-    tickers = list(set([
-        item.split(":")[1].split(",")[0].strip('"')
-        for item in text.split("\\n")
-        if "ticker" in item and ":" in item
-    ]))
+    rows = driver.find_elements(By.CSS_SELECTOR, 'div[jsname="pP5Yhb"] .SxcTic')
+    tickers = []
 
+    for row in rows:
+        try:
+            ticker = row.find_element(By.CSS_SELECTOR, ".COaKTb").text.strip()
+            if ticker:
+                tickers.append(ticker)
+        except:
+            continue
+
+    driver.quit()
     print(f"📊 Found {len(tickers)} tickers: {tickers}")
-except Exception as e:
-    print("❌ Failed to retrieve tickers:", e)
-    exit()
 
-# Add only new tickers
-try:
-    existing_values = worksheet.col_values(1)
-    existing_tickers = set(existing_values)
-    new_tickers = [t for t in tickers if t not in existing_tickers]
+    if not tickers:
+        print("⚠️ No tickers found.")
+        exit(0)
 
-    if new_tickers:
-        next_row = len(existing_values) + 1
-        for i, ticker in enumerate(new_tickers):
-            worksheet.update(f"A{next_row + i}", [[ticker]])
-        print(f"✅ Added {len(new_tickers)} new tickers to sheet.")
+    # Get current list
+    existing_tickers = set(worksheet.col_values(1))
+    new_entries = [(ticker, today_str) for ticker in tickers if ticker not in existing_tickers]
+
+    if new_entries:
+        worksheet.append_rows(new_entries, value_input_option="RAW")
+        print(f"✅ Added {len(new_entries)} new tickers.")
     else:
         print("ℹ️ No new tickers to add today.")
+
 except Exception as e:
-    print("❌ Failed to write to Google Sheet:", e)
+    print("❌ Scraper failed:", e)
+    exit(1)
