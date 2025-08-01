@@ -10,12 +10,12 @@ import requests
 
 print("✅ main.py launched successfully")
 
-# Patch yfinance to use a custom User-Agent
+# Patch yfinance to use a custom User-Agent (to avoid 403s)
 requests_session = requests.Session()
 requests_session.headers.update({'User-Agent': 'Mozilla/5.0'})
 yf.shared._requests = requests_session
 
-# Alpaca API connection check (LIVE)
+# Alpaca API connection check
 try:
     print("Connecting to Alpaca LIVE environment...")
 
@@ -53,4 +53,10 @@ try:
     sh = gc.open("Trading Log")
     worksheet = sh.worksheet("log")
 
-    now = d
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    worksheet.update(values=[[f"✅ Alive at {now}"]], range_name="A1")
+
+    print("✅ Google Sheet updated successfully.")
+
+except Exception as e:
+    print("❌ Gspread operation failed:", e)
