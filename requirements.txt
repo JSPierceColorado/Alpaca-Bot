@@ -1,6 +1,9 @@
-yfinance==0.2.36
-alpaca-trade-api==3.2.0
 gspread==6.2.1
 oauth2client==4.1.3
-selenium==4.15.2
+alpaca-trade-api==3.2.0
+yfinance==0.2.37
+selenium==4.21.0
+beautifulsoup4==4.12.3
 requests==2.31.0
+msgpack==1.0.3
+webdriver-manager==4.0.1
