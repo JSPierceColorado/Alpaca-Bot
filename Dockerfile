@@ -1,31 +1,37 @@
 FROM python:3.12-slim
 
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    wget \
+    curl \
+    gnupg \
+    unzip \
+    fonts-liberation \
+    libnss3 \
+    libatk-bridge2.0-0 \
+    libxss1 \
+    libasound2 \
+    libgtk-3-0 \
+    libx11-xcb1 \
+    libxcb-dri3-0 \
+    chromium \
+    chromium-driver \
+    --no-install-recommends && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set environment variable to avoid Chrome sandbox issues
+ENV CHROME_BIN=/usr/bin/chromium
+
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    gcc \
-    libffi-dev \
-    libssl-dev \
-    chromium-driver \
-    chromium \
-    curl \
-    unzip \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set environment variables for Chromium (used by Selenium)
-ENV CHROME_BIN=/usr/bin/chromium
-ENV PATH=$PATH:/usr/bin/chromium
-
 # Copy and install dependencies
 COPY requirements.txt .
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy source files
 COPY . .
 
-# Launch script
+# Run your script
 CMD ["python", "main.py"]
