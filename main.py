@@ -1,61 +1,59 @@
-import os
-import json
-import gspread
 import requests
 from bs4 import BeautifulSoup
-import pandas as pd
+import gspread
+import os
+import json
 from io import StringIO
-
-FINVIZ_URL = "https://finviz.com/screener.ashx?v=111&f=an_recom_buybetter,exch_nyse,fa_opermargin_pos,news_date_today&ft=4"
+from datetime import datetime
 
 print("✅ main.py launched successfully")
 
-# Google Sheets setup
+# Load credentials from environment variable
 try:
     creds_json = os.getenv("GOOGLE_CREDS_JSON")
     creds_dict = json.load(StringIO(creds_json))
     gc = gspread.service_account_from_dict(creds_dict)
+
+    # Open Google Sheet and get the 'tickers' worksheet
     sh = gc.open("Trading Log")
-    worksheet = sh.worksheet("screener")
-    worksheet.clear()
-    print("✅ Connected to Google Sheet tab 'screener'")
+    worksheet = sh.worksheet("tickers")
+    print("✅ Connected to Google Sheet tab 'tickers'")
 except Exception as e:
-    print("❌ Google Sheets setup failed:", e)
-    worksheet = None
+    print("❌ Failed to connect to Google Sheet:", e)
+    exit()
 
-# Scrape all pages
-def scrape_all_finviz_pages():
-    print("📈 Scraping Finviz...")
+# Scrape Google Finance Most Active page
+print("🌐 Scraping Google Finance most active page...")
+try:
+    url = "https://www.google.com/finance/markets/most-active"
     headers = {"User-Agent": "Mozilla/5.0"}
-    page = 1
-    all_data = []
+    response = requests.get(url, headers=headers)
+    soup = BeautifulSoup(response.content, "html.parser")
 
-    while True:
-        paged_url = f"{FINVIZ_URL}&r={(page - 1) * 20 + 1}"
-        res = requests.get(paged_url, headers=headers)
-        soup = BeautifulSoup(res.text, "html.parser")
-        table = soup.find("table", class_="table-light")
+    tickers = []
+    for tag in soup.select("div.YMlKec.fxKbKc"):
+        text = tag.text.strip()
+        if text and text.isupper() and len(text) <= 5:
+            tickers.append(text)
 
-        if not table:
-            break
+    tickers = list(set(tickers))  # Remove duplicates
+    print(f"📊 Found {len(tickers)} tickers.")
+except Exception as e:
+    print("❌ Failed to scrape Google Finance:", e)
+    exit()
 
-        rows = table.find_all("tr")[1:]  # Skip header
-        for row in rows:
-            cols = [col.text.strip() for col in row.find_all("td")]
-            if cols:
-                all_data.append(cols)
+# Add only new tickers to the sheet
+try:
+    existing_values = worksheet.col_values(1)
+    existing_tickers = set(existing_values)
+    new_tickers = [t for t in tickers if t not in existing_tickers]
 
-        print(f"✅ Scraped page {page} with {len(rows)} entries")
-        page += 1
-
-    return all_data
-
-# Process and upload
-data = scrape_all_finviz_pages()
-
-if data and worksheet:
-    df = pd.DataFrame(data)
-    worksheet.update([df.columns.tolist()] + df.values.tolist())
-    print(f"✅ Wrote {len(df)} rows to Google Sheet")
-else:
-    print("⚠️ No data to write")
+    if new_tickers:
+        next_row = len(existing_values) + 1
+        for i, ticker in enumerate(new_tickers):
+            worksheet.update(f"A{next_row + i}", [[ticker]])
+        print(f"✅ Added {len(new_tickers)} new tickers to sheet.")
+    else:
+        print("ℹ️ No new tickers to add today.")
+except Exception as e:
+    print("❌ Failed to write to Google Sheet:", e)
