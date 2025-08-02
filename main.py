@@ -20,8 +20,8 @@ def get_driver():
     chrome_options.add_argument("--remote-debugging-port=9222")
     return webdriver.Chrome(options=chrome_options)
 
-def scrape_tickers():
-    url = "https://www.google.com/finance/markets/most-active?hl=en"
+def scrape_tickers_from_url(url):
+    print(f"🌐 Scraping: {url}")
     driver = get_driver()
     driver.get(url)
     time.sleep(5)  # Let the JavaScript render
@@ -30,49 +30,38 @@ def scrape_tickers():
     hrefs = [el.get_attribute("href") for el in elements if el.get_attribute("href")]
     driver.quit()
 
-    print("🔗 Sample hrefs:", hrefs[:5])
-
-    pattern = re.compile(r'/quote/([A-Z.]+):[A-Z]+')  # e.g., /quote/AAPL:NASDAQ
+    pattern = re.compile(r'/quote/([A-Z.]+):[A-Z]+')  # Match /quote/AAPL:NASDAQ
     tickers = set()
     for href in hrefs:
         match = pattern.search(href)
         if match:
             tickers.add(match.group(1))
 
+    print(f"🔍 Found {len(tickers)} tickers")
     return sorted(tickers)
 
-def update_tickers_tab(gc):
-    print("🔍 Checking last scrape time...")
+def update_ticker_sheet(gc):
+    print("📗 Updating 'tickers' tab...")
     sh = gc.open("Trading Log")
     sheet = sh.worksheet("tickers")
 
-    try:
-        last_scrape = sheet.acell("A1").value
-        if last_scrape:
-            last_dt = datetime.datetime.fromisoformat(last_scrape)
-            if (datetime.datetime.now(datetime.UTC) - last_dt).total_seconds() < 86400:
-                print("⏳ Already scraped within 24 hours. Skipping update.")
-                return
-    except Exception as e:
-        print("⚠️ Failed to check scrape time:", e)
+    # Get existing tickers from column A
+    existing = set(sheet.col_values(1))
+    print(f"📄 {len(existing)} existing tickers")
 
-    print("🌐 Scraping tickers from Google Finance...")
-    tickers = scrape_tickers()
-    print(f"✅ Found {len(tickers)} tickers.")
+    # Scrape both sources
+    most_active = scrape_tickers_from_url("https://www.google.com/finance/markets/most-active?hl=en")
+    trending = scrape_tickers_from_url("https://www.google.com/finance/?hl=en")
 
-    existing = sheet.col_values(2)[1:]  # Skip timestamp and header
-    new_tickers = [t for t in tickers if t not in existing]
+    combined = set(most_active + trending)
+    new_tickers = [t for t in combined if t not in existing]
 
     if not new_tickers:
         print("📭 No new tickers to add.")
     else:
         print(f"🆕 Appending {len(new_tickers)} new tickers.")
-        rows = [[datetime.datetime.now(datetime.UTC).isoformat(), t] for t in new_tickers]
-        sheet.append_rows(rows)
-
-    # Update scrape timestamp
-    sheet.update("A1", [[datetime.datetime.now(datetime.UTC).isoformat()]])
-    print("🕒 Scrape timestamp updated.")
+        values = [[t] for t in new_tickers]
+        sheet.append_rows(values)
 
 # === Entry point ===
 try:
@@ -83,8 +72,8 @@ try:
     creds_dict = json.loads(creds_json)
     gc = gspread.service_account_from_dict(creds_dict)
 
-    update_tickers_tab(gc)
-    print("✅ Tickers tab updated successfully.")
+    update_ticker_sheet(gc)
+    print("✅ Ticker scraping complete.")
 
 except Exception as e:
     print("❌ Gspread or scrape operation failed:", e)
