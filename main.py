@@ -171,13 +171,7 @@ def main():
     print("🚀 Launching screener bot")
     gc = get_google_client()
 
-    print("🌐 Scraping Google Finance...")
-    scraped_tickers = scrape_tickers()
-    print(f"✅ Scraped {len(scraped_tickers)} tickers from web.")
-
-    update_tickers_sheet(gc, scraped_tickers)
-    tickers = get_all_tickers_from_sheet(gc)
-    print(f"🧾 Will analyze {len(tickers)} tickers (from sheet) for bullish signals.")
+    # ... (scraping and updating tickers as before)
 
     print("📊 Analyzing tickers for bullish signals...")
     rows = []
@@ -186,7 +180,9 @@ def main():
         row = analyze_ticker(t)
         rows.append(row)
 
+    # === Clear screener tab before posting new data ===
     ws = gc.open(SHEET_NAME).worksheet(SCREENER_TAB)
+    print("🧹 Clearing screener tab of all existing data...")
     ws.clear()
     ws.append_row(["Ticker", "Price", "EMA_20", "RSI_14", "MACD", "Signal", "Bullish Signal", "Timestamp"])
     ws.append_rows(rows)
