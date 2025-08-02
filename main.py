@@ -29,11 +29,13 @@ def scrape_tickers():
 
     while next_url:
         if next_url == url:
+            print(f"Requesting: {next_url} (params included)")
             resp = requests.get(next_url, params=params)
         else:
             # Always ensure next_url is a full URL
             if next_url.startswith("/"):
                 next_url = "https://api.polygon.io" + next_url
+            print(f"Requesting: {next_url}")
             resp = requests.get(next_url)
         resp.raise_for_status()
         data = resp.json()
@@ -49,11 +51,10 @@ def scrape_tickers():
 
 def update_tickers_sheet(gc, tickers):
     ws = gc.open(SHEET_NAME).worksheet(TICKERS_TAB)
-    existing = ws.col_values(1)
-    new_tickers = [t for t in tickers if t not in existing]
-    if new_tickers:
-        ws.append_rows([[t] for t in new_tickers])
-    return list(set(existing + new_tickers))
+    print(f"📝 Writing {len(tickers)} tickers to the '{TICKERS_TAB}' tab...")
+    ws.clear()
+    ws.append_rows([[t] for t in tickers])
+    return tickers
 
 def get_all_tickers_from_sheet(gc):
     ws = gc.open(SHEET_NAME).worksheet(TICKERS_TAB)
@@ -63,9 +64,11 @@ def get_all_tickers_from_sheet(gc):
 
 def get_price(ticker):
     url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/prev"
-    response = requests.get(url, params={"adjusted": "true", "apiKey": API_KEY})
-    response.raise_for_status()
-    return response.json().get("results", [{}])[0].get("c")
+    params = {"adjusted": "true", "apiKey": API_KEY}
+    print(f"  ↳ [price] {url}")
+    resp = requests.get(url, params=params)
+    resp.raise_for_status()
+    return resp.json().get("results", [{}])[0].get("c")
 
 def get_ema20(ticker):
     url = f"https://api.polygon.io/v1/indicators/ema/{ticker}"
@@ -77,9 +80,10 @@ def get_ema20(ticker):
         "window": 20,
         "series_type": "close"
     }
-    response = requests.get(url, params=params)
-    response.raise_for_status()
-    values = response.json().get("results", {}).get("values", [])
+    print(f"  ↳ [ema20] {url}")
+    resp = requests.get(url, params=params)
+    resp.raise_for_status()
+    values = resp.json().get("results", {}).get("values", [])
     return values[0].get("value") if values else None
 
 def get_rsi14(ticker):
@@ -92,9 +96,10 @@ def get_rsi14(ticker):
         "window": 14,
         "series_type": "close"
     }
-    response = requests.get(url, params=params)
-    response.raise_for_status()
-    values = response.json().get("results", {}).get("values", [])
+    print(f"  ↳ [rsi14] {url}")
+    resp = requests.get(url, params=params)
+    resp.raise_for_status()
+    values = resp.json().get("results", {}).get("values", [])
     return values[0].get("value") if values else None
 
 def get_macd(ticker):
@@ -109,9 +114,10 @@ def get_macd(ticker):
         "signal_window": 9,
         "series_type": "close"
     }
-    response = requests.get(url, params=params)
-    response.raise_for_status()
-    values = response.json().get("results", {}).get("values", [])
+    print(f"  ↳ [macd] {url}")
+    resp = requests.get(url, params=params)
+    resp.raise_for_status()
+    values = resp.json().get("results", {}).get("values", [])
     if values:
         return values[0].get("value"), values[0].get("signal")
     return None, None
@@ -147,12 +153,13 @@ def main():
     print("🚀 Launching screener bot")
     gc = get_google_client()
 
-    # Fetch latest tickers from Polygon
+    # 1. Scrape tickers from Polygon (with robust pagination)
     tickers = scrape_tickers()
 
-    # Write tickers to tickers tab, avoid duplicates
-    tickers = update_tickers_sheet(gc, tickers)
+    # 2. Write tickers to Google Sheet (tickers tab)
+    update_tickers_sheet(gc, tickers)
 
+    # 3. Analyze each ticker and collect indicator data
     print("📊 Analyzing tickers for bullish signals...")
     rows = []
     for t in tickers:
@@ -160,7 +167,7 @@ def main():
         row = analyze_ticker(t)
         rows.append(row)
 
-    # Clear screener tab and update with new data
+    # 4. Clear and update screener tab with fresh indicator data
     ws = gc.open(SHEET_NAME).worksheet(SCREENER_TAB)
     print("🧹 Clearing screener tab of all existing data...")
     ws.clear()
