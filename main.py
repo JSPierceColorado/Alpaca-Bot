@@ -25,23 +25,35 @@ def scrape_tickers():
     driver = webdriver.Chrome(options=options)
 
     tickers = set()
-    pattern = re.compile(r"/quote/([A-Z.]+):(NASDAQ|NYSE|AMEX|NYSEARCA|BATS|OTCMKTS)")
+    pattern = re.compile(r"/quote/([A-Z0-9.]+):([A-Z0-9]+)")
 
     urls = [
-        "https://www.google.com/finance/?hl=en",  # Trending tab!
+        "https://www.google.com/finance/?hl=en",  # Trending tab
         "https://www.google.com/finance/markets/gainers?hl=en",
         "https://www.google.com/finance/markets/losers?hl=en",
     ]
+
+    print("🌐 Scraping the following pages for tickers:")
+    for url in urls:
+        print(f"  - {url}")
 
     for url in urls:
         driver.get(url)
         time.sleep(2)
         soup = BeautifulSoup(driver.page_source, "html.parser")
+        found = 0
         for a in soup.find_all("a", href=True):
             match = pattern.search(a["href"])
             if match:
-                tickers.add(match.group(1))
+                ticker = match.group(1)
+                exch = match.group(2)
+                # Uncomment next line to only include US stocks:
+                # if exch not in {"NASDAQ", "NYSE", "AMEX", "NYSEARCA"}: continue
+                tickers.add(ticker)
+                found += 1
+        print(f"    {found} ticker links found on {url}")
     driver.quit()
+    print(f"Total unique tickers gathered: {len(tickers)}")
     return sorted(tickers)
 
 def update_tickers_sheet(gc, tickers):
