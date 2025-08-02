@@ -28,9 +28,10 @@ def scrape_tickers():
     pattern = re.compile(r"/quote/([A-Z0-9.]+):([A-Z0-9]+)")
 
     urls = [
-        "https://www.google.com/finance/?hl=en",  # Trending tab
+        "https://www.google.com/finance/markets/most-active?hl=en",
+        "https://www.google.com/finance/?hl=en",
         "https://www.google.com/finance/markets/gainers?hl=en",
-        "https://www.google.com/finance/markets/losers?hl=en",
+        "https://www.google.com/finance/markets/losers?hl=en"
     ]
 
     print("🌐 Scraping the following pages for tickers:")
