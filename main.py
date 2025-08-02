@@ -19,7 +19,31 @@ GOOGLE_FINANCE_URLS = [
     "https://www.google.com/finance/markets/losers?hl=en",
 ]
 
-# === SETUP GOOGLE SHEETS ===
+# === RATE LIMITING ===
+LAST_REQUEST_TIME = 0
+REQUEST_DELAY = 15  # seconds
+
+def rate_limited_get(url, params):
+    global LAST_REQUEST_TIME
+    elapsed = time.time() - LAST_REQUEST_TIME
+    if elapsed < REQUEST_DELAY:
+        time.sleep(REQUEST_DELAY - elapsed)
+
+    while True:
+        try:
+            response = requests.get(url, params=params)
+            if response.status_code == 429:
+                print("⏳ Rate limit hit. Sleeping for 60 seconds...")
+                time.sleep(60)
+                continue
+            response.raise_for_status()
+            LAST_REQUEST_TIME = time.time()
+            return response
+        except requests.RequestException as e:
+            print(f"❌ Request error: {e}, retrying in 60s...")
+            time.sleep(60)
+
+# === GOOGLE SHEETS ===
 def get_google_client():
     creds = json.loads(os.getenv("GOOGLE_CREDS_JSON"))
     return gspread.service_account_from_dict(creds)
@@ -55,19 +79,11 @@ def update_tickers_sheet(gc, tickers):
         ws.append_rows([[t] for t in new_tickers])
     return list(set(existing + new_tickers))
 
-# === THROTTLED REQUEST ===
-def throttled_request(url, params):
-    time.sleep(15)
-    resp = requests.get(url, params=params)
-    resp.raise_for_status()
-    return resp.json()
-
-# === POLYGON API CALLS ===
+# === POLYGON API WRAPPERS ===
 def get_price(ticker):
     url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/prev"
-    params = {"adjusted": "true", "apiKey": API_KEY}
-    data = throttled_request(url, params)
-    return data.get("results", [{}])[0].get("c")
+    response = rate_limited_get(url, {"adjusted": "true", "apiKey": API_KEY})
+    return response.json().get("results", [{}])[0].get("c")
 
 def get_ema20(ticker):
     url = f"https://api.polygon.io/v1/indicators/ema/{ticker}"
@@ -79,8 +95,8 @@ def get_ema20(ticker):
         "window": 20,
         "series_type": "close"
     }
-    data = throttled_request(url, params)
-    values = data.get("results", {}).get("values", [])
+    response = rate_limited_get(url, params)
+    values = response.json().get("results", {}).get("values", [])
     return values[0].get("value") if values else None
 
 def get_rsi14(ticker):
@@ -93,8 +109,8 @@ def get_rsi14(ticker):
         "window": 14,
         "series_type": "close"
     }
-    data = throttled_request(url, params)
-    values = data.get("results", {}).get("values", [])
+    response = rate_limited_get(url, params)
+    values = response.json().get("results", {}).get("values", [])
     return values[0].get("value") if values else None
 
 def get_macd(ticker):
@@ -109,8 +125,8 @@ def get_macd(ticker):
         "signal_window": 9,
         "series_type": "close"
     }
-    data = throttled_request(url, params)
-    values = data.get("results", {}).get("values", [])
+    response = rate_limited_get(url, params)
+    values = response.json().get("results", {}).get("values", [])
     if values:
         return values[0].get("value"), values[0].get("signal")
     return None, None
