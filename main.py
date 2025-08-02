@@ -5,7 +5,7 @@ import requests
 import gspread
 
 # === Config ===
-API_KEY = "0qwRnYgKpKFX5YQ5dxRs5_DKZ8fHXs6d"
+API_KEY = os.getenv("API_KEY")  # ✔️ Ensure this is set in Railway
 TICKER = "GOOGL"
 SHEET_NAME = "Trading Log"
 TAB_NAME = "screener"
@@ -27,7 +27,6 @@ def fetch_indicator(indicator, params=None):
     d = r.json()
     return d.get("results", {}).get("values", [])
 
-# Specific fetch functions:
 def get_ema20():
     vals = fetch_indicator("ema", {"window": 20, "series_type": "close"})
     return vals[0].get("value") if vals else None
@@ -50,10 +49,10 @@ def get_macd():
     return None, None, None
 
 def get_price():
-    url = f"https://api.polygon.io/v1/last/stocks/{TICKER}"
+    url = f"https://api.polygon.io/v2/last/trade/stocks/{TICKER}"
     resp = requests.get(url, params={"apiKey": API_KEY})
     resp.raise_for_status()
-    return resp.json().get("last", {}).get("price")
+    return resp.json().get("results", {}).get("p")  # 'p' = last price
 
 # === Main ===
 
@@ -66,7 +65,8 @@ def main():
     rsi14 = get_rsi14()
     macd_val, macd_sig, macd_hist = get_macd()
 
-    print(f"Price: {price}, EMA20: {ema20}, SMA50: {sma50}, RSI14: {rsi14}, MACD: {macd_val}/{macd_sig}/{macd_hist}")
+    print(f"📊 Price: {price}, EMA20: {ema20}, SMA50: {sma50}, RSI14: {rsi14}")
+    print(f"💹 MACD: {macd_val}, Signal: {macd_sig}, Histogram: {macd_hist}")
 
     gc = get_google_client()
     ws = gc.open(SHEET_NAME).worksheet(TAB_NAME)
