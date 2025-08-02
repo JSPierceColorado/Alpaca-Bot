@@ -29,9 +29,11 @@ def scrape_tickers():
 
     while next_url:
         if next_url == url:
+            # ONLY ON FIRST REQUEST!
             resp = requests.get(next_url, params=params)
         else:
-            resp = requests.get(next_url)  # NO PARAMS!
+            # NO params! Not params=None, just no params at all.
+            resp = requests.get(next_url)
         resp.raise_for_status()
         data = resp.json()
         tickers = [item["ticker"] for item in data["results"]
@@ -41,7 +43,6 @@ def scrape_tickers():
         total += len(tickers)
         print(f"    Fetched {len(tickers)} tickers, total so far: {total}")
         next_url = data.get("next_url")
-
     print(f"✅ Fetched {len(all_tickers)} total tickers from Polygon")
     return sorted(all_tickers)
 
