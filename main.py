@@ -25,12 +25,25 @@ def scrape_tickers():
     driver = webdriver.Chrome(options=options)
 
     tickers = set()
-    pattern = re.compile(r"/quote/([A-Z0-9.]+):([A-Z0-9]+)")
+
+    # --- URLs to scrape ---
     urls = [
-        "https://www.google.com/finance/?hl=en",  # Trending tab
+        "https://www.google.com/finance/?hl=en",
         "https://www.google.com/finance/markets/gainers?hl=en",
         "https://www.google.com/finance/markets/losers?hl=en",
+        "https://www.google.com/finance/markets/climate-leaders?hl=en",
+        "https://www.google.com/finance/markets/most-active?hl=en",
+        "https://finance.yahoo.com/",
+        "https://finance.yahoo.com/markets/stocks/trending/",
+        "https://finance.yahoo.com/research-hub/screener/undervalued_growth_stocks/",
     ]
+
+    # Google Finance pattern: /quote/TICKER:EXCHANGE
+    google_pattern = re.compile(r"/quote/([A-Z0-9.]+):([A-Z0-9]+)")
+
+    # Yahoo Finance pattern: /quote/TICKER?p=TICKER
+    yahoo_pattern = re.compile(r"/quote/([A-Z0-9.]+)\?p=[A-Z0-9.]+")
+
     print("🌐 Scraping the following pages for tickers:")
     for url in urls:
         print(f"  - {url}")
@@ -39,14 +52,21 @@ def scrape_tickers():
         driver.get(url)
         time.sleep(5)
         soup = BeautifulSoup(driver.page_source, "html.parser")
+        found = set()
         for a in soup.find_all("a", href=True):
-            match = pattern.search(a["href"])
-            if match:
-                ticker = match.group(1)
-                exch = match.group(2)
-                # Uncomment if you want only US stocks:
-                # if exch not in {"NASDAQ", "NYSE", "AMEX", "NYSEARCA"}: continue
+            href = a["href"]
+            match_google = google_pattern.search(href)
+            match_yahoo = yahoo_pattern.search(href)
+            if match_google:
+                ticker = match_google.group(1)
+                # Optionally, use exchange: match_google.group(2)
                 tickers.add(ticker)
+                found.add(ticker)
+            elif match_yahoo:
+                ticker = match_yahoo.group(1)
+                tickers.add(ticker)
+                found.add(ticker)
+        print(f"    {len(found)} ticker links found on {url}: {', '.join(list(found)[:10])} ...")
     driver.quit()
     print(f"Total unique tickers gathered: {len(tickers)}")
     return sorted(tickers)
