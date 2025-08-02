@@ -2,84 +2,106 @@ import os
 import json
 import datetime
 import time
-import re
 
 import gspread
+import pandas as pd
+import numpy as np
+from alpaca_trade_api.rest import REST, TimeFrame
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 
 print("✅ main.py launched successfully")
 
-def get_driver():
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--remote-debugging-port=9222")
-    return webdriver.Chrome(options=chrome_options)
+# --- Setup ---
 
-def scrape_tickers_from_url(url):
-    print(f"🌐 Scraping: {url}")
-    driver = get_driver()
-    driver.get(url)
-    time.sleep(5)  # Let JS load
+def get_alpaca_client():
+    api_key = os.getenv("APCA_API_KEY_ID")
+    secret_key = os.getenv("APCA_API_SECRET_KEY")
+    return REST(api_key, secret_key, base_url="https://paper-api.alpaca.markets")
 
-    elements = driver.find_elements(By.TAG_NAME, "a")
-    hrefs = [el.get_attribute("href") for el in elements if el.get_attribute("href")]
-    driver.quit()
-
-    pattern = re.compile(r'/quote/([A-Z.]+):[A-Z]+')
-    tickers = set()
-    for href in hrefs:
-        match = pattern.search(href)
-        if match:
-            tickers.add(match.group(1))
-
-    print(f"🔍 Found {len(tickers)} tickers")
-    return tickers
-
-def update_ticker_sheet(gc):
-    print("📗 Accessing 'tickers' tab...")
-    sh = gc.open("Trading Log")
-    sheet = sh.worksheet("tickers")
-
-    existing = set(sheet.col_values(1))
-    print(f"📄 {len(existing)} existing tickers in sheet")
-
-    urls = [
-        "https://www.google.com/finance/markets/most-active?hl=en",
-        "https://www.google.com/finance/?hl=en",
-        "https://www.google.com/finance/markets/gainers?hl=en",
-        "https://www.google.com/finance/markets/losers?hl=en"
-    ]
-
-    combined_tickers = set()
-    for url in urls:
-        tickers = scrape_tickers_from_url(url)
-        combined_tickers.update(tickers)
-
-    new_tickers = [t for t in sorted(combined_tickers) if t not in existing]
-
-    if not new_tickers:
-        print("📭 No new tickers to add.")
-    else:
-        print(f"🆕 Adding {len(new_tickers)} new tickers to sheet.")
-        rows = [[t] for t in new_tickers]
-        sheet.append_rows(rows)
-
-# === Entry point ===
-try:
-    print("🔐 Authenticating Google Sheets...")
+def get_google_client():
     creds_json = os.getenv("GOOGLE_CREDS_JSON")
     if not creds_json:
         raise ValueError("GOOGLE_CREDS_JSON environment variable not set.")
     creds_dict = json.loads(creds_json)
-    gc = gspread.service_account_from_dict(creds_dict)
+    return gspread.service_account_from_dict(creds_dict)
 
-    update_ticker_sheet(gc)
-    print("✅ Ticker scraping complete.")
+# --- Indicator Functions ---
 
+def calculate_indicators(df):
+    df["EMA_20"] = df["close"].ewm(span=20).mean()
+    df["SMA_50"] = df["close"].rolling(window=50).mean()
+
+    delta = df["close"].diff()
+    gain = np.where(delta > 0, delta, 0)
+    loss = np.where(delta < 0, -delta, 0)
+    avg_gain = pd.Series(gain).rolling(window=14).mean()
+    avg_loss = pd.Series(loss).rolling(window=14).mean()
+    rs = avg_gain / avg_loss
+    df["RSI_14"] = 100 - (100 / (1 + rs))
+
+    ema12 = df["close"].ewm(span=12).mean()
+    ema26 = df["close"].ewm(span=26).mean()
+    df["MACD"] = ema12 - ema26
+    df["Signal"] = df["MACD"].ewm(span=9).mean()
+    df["MACD_Crossover"] = (df["MACD"] > df["Signal"]) & (df["MACD"].shift() <= df["Signal"].shift())
+
+    return df
+
+# --- Main Logic ---
+
+def analyze_tickers():
+    gc = get_google_client()
+    sh = gc.open("Trading Log")
+    tickers_ws = sh.worksheet("tickers")
+    screener_ws = sh.worksheet("screener")
+
+    tickers = tickers_ws.col_values(1)
+    tickers = [t.strip().upper() for t in tickers if t.strip()]
+    print(f"📈 Analyzing {len(tickers)} tickers...")
+
+    client = get_alpaca_client()
+    results = []
+
+    for ticker in tickers:
+        try:
+            bars = client.get_bars(ticker, TimeFrame.Day, limit=100).df
+            if bars.empty:
+                print(f"⚠️ No data for {ticker}")
+                continue
+
+            df = bars.reset_index()
+            df = df[["timestamp", "open", "high", "low", "close", "volume"]]
+            df = calculate_indicators(df)
+
+            latest = df.iloc[-1]
+            results.append([
+                ticker,
+                round(latest["EMA_20"], 2),
+                round(latest["SMA_50"], 2),
+                round(latest["RSI_14"], 2),
+                round(latest["MACD"], 2),
+                round(latest["Signal"], 2),
+                "Yes" if latest["MACD_Crossover"] else "No",
+                latest["timestamp"].isoformat()
+            ])
+            print(f"✅ {ticker} analyzed.")
+        except Exception as e:
+            print(f"❌ Error with {ticker}: {e}")
+
+    if results:
+        headers = [
+            "Ticker", "EMA_20", "SMA_50", "RSI_14", "MACD",
+            "Signal", "MACD_Crossover", "Timestamp"
+        ]
+        screener_ws.clear()
+        screener_ws.append_row(headers)
+        screener_ws.append_rows(results)
+        print(f"📝 Wrote {len(results)} results to 'screener' tab.")
+
+# --- Run ---
+try:
+    analyze_tickers()
 except Exception as e:
-    print("❌ Gspread or scrape operation failed:", e)
+    print("❌ Fatal error:", e)
