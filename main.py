@@ -28,11 +28,10 @@ def scrape_tickers():
     next_url = url
 
     while next_url:
-        # For first request, pass params; for pagination, do not!
         if next_url == url:
             resp = requests.get(next_url, params=params)
         else:
-            resp = requests.get(next_url)  # No params here!
+            resp = requests.get(next_url)  # NO PARAMS!
         resp.raise_for_status()
         data = resp.json()
         tickers = [item["ticker"] for item in data["results"]
