@@ -2,7 +2,6 @@ import os
 import json
 import time
 import re
-import threading
 import requests
 import gspread
 from bs4 import BeautifulSoup
@@ -19,33 +18,6 @@ GOOGLE_FINANCE_URLS = [
     "https://www.google.com/finance/markets/gainers?hl=en",
     "https://www.google.com/finance/markets/losers?hl=en",
 ]
-
-# === RATE LIMITING ===
-REQUEST_DELAY = 30  # seconds
-LAST_REQUEST_TIME = [0]
-LOCK = threading.Lock()
-
-def rate_limited_get(url, params):
-    with LOCK:
-        elapsed = time.time() - LAST_REQUEST_TIME[0]
-        if elapsed < REQUEST_DELAY:
-            to_wait = REQUEST_DELAY - elapsed
-            print(f"⏳ Sleeping {to_wait:.1f} seconds to respect API rate limit.")
-            time.sleep(to_wait)
-
-        while True:
-            try:
-                response = requests.get(url, params=params)
-                if response.status_code == 429:
-                    print("⏳ Rate limit hit. Sleeping for 60 seconds...")
-                    time.sleep(60)
-                    continue
-                response.raise_for_status()
-                LAST_REQUEST_TIME[0] = time.time()
-                return response
-            except requests.RequestException as e:
-                print(f"❌ Request error: {e}, retrying in 60s...")
-                time.sleep(60)
 
 # === GOOGLE SHEETS ===
 def get_google_client():
@@ -86,7 +58,8 @@ def update_tickers_sheet(gc, tickers):
 # === POLYGON API WRAPPERS ===
 def get_price(ticker):
     url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/prev"
-    response = rate_limited_get(url, {"adjusted": "true", "apiKey": API_KEY})
+    response = requests.get(url, params={"adjusted": "true", "apiKey": API_KEY})
+    response.raise_for_status()
     return response.json().get("results", [{}])[0].get("c")
 
 def get_ema20(ticker):
@@ -99,7 +72,8 @@ def get_ema20(ticker):
         "window": 20,
         "series_type": "close"
     }
-    response = rate_limited_get(url, params)
+    response = requests.get(url, params=params)
+    response.raise_for_status()
     values = response.json().get("results", {}).get("values", [])
     return values[0].get("value") if values else None
 
@@ -113,7 +87,8 @@ def get_rsi14(ticker):
         "window": 14,
         "series_type": "close"
     }
-    response = rate_limited_get(url, params)
+    response = requests.get(url, params=params)
+    response.raise_for_status()
     values = response.json().get("results", {}).get("values", [])
     return values[0].get("value") if values else None
 
@@ -129,7 +104,8 @@ def get_macd(ticker):
         "signal_window": 9,
         "series_type": "close"
     }
-    response = rate_limited_get(url, params)
+    response = requests.get(url, params=params)
+    response.raise_for_status()
     values = response.json().get("results", {}).get("values", [])
     if values:
         return values[0].get("value"), values[0].get("signal")
