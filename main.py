@@ -21,7 +21,7 @@ GOOGLE_FINANCE_URLS = [
 
 # === RATE LIMITING ===
 LAST_REQUEST_TIME = 0
-REQUEST_DELAY = 15  # seconds
+REQUEST_DELAY = 30  # seconds
 
 def rate_limited_get(url, params):
     global LAST_REQUEST_TIME
