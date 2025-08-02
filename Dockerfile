@@ -1,32 +1,40 @@
 FROM python:3.12-slim
 
+# Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Install system dependencies
+# Install system dependencies including Chrome
 RUN apt-get update && apt-get install -y \
     gcc \
-    libpq-dev \
     curl \
-    chromium \
-    chromium-driver \
+    unzip \
+    gnupg \
     libglib2.0-0 \
     libnss3 \
     libgconf-2-4 \
     libfontconfig1 \
     libxss1 \
-    libappindicator3-1 \
+    libappindicator1 \
+    libindicator7 \
+    fonts-liberation \
     libasound2 \
-    libatk-bridge2.0-0 \
-    libgtk-3-0 \
+    xdg-utils \
+    wget \
+    chromium \
+    chromium-driver \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Install Python packages
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy source code
+# Copy all source files
 COPY . .
 
-# Run
+# Let Selenium find Chrome
+ENV PATH="/usr/lib/chromium/:$PATH"
+ENV CHROME_BIN="/usr/bin/chromium"
+
+# Run the bot
 CMD ["python", "main.py"]
