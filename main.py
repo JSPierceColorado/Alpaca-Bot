@@ -32,7 +32,15 @@ def fetch_indicators(symbol: str):
     }
     response = requests.post(url, json=payload)
     response.raise_for_status()
-    return response.json()["value"]
+    data = response.json()
+
+    print("🔎 Raw TAAPI.IO response:")
+    print(json.dumps(data, indent=2))
+
+    if "value" not in data:
+        raise ValueError(f"TAAPI.IO returned an error or invalid structure: {data}")
+
+    return data["value"]
 
 # === Main ===
 def main():
