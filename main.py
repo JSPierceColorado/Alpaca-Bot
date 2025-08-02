@@ -53,7 +53,7 @@ def update_tickers_sheet(gc, tickers):
     new_tickers = [t for t in tickers if t not in existing]
     if new_tickers:
         ws.append_rows([[t] for t in new_tickers])
-    return existing + new_tickers
+    return list(set(existing + new_tickers))
 
 # === POLYGON INDICATOR HELPERS ===
 
@@ -143,4 +143,12 @@ def main():
     # Step 4: Write to screener tab
     ws = gc.open(SHEET_NAME).worksheet(SCREENER_TAB)
     ws.clear()
-    ws.append_row(["Ticker", "Price", "EMA_20", "RSI_14", "MACD"]()_
+    ws.append_row(["Ticker", "Price", "EMA_20", "RSI_14", "MACD", "Signal", "Bullish Signal", "Timestamp"])
+    ws.append_rows(rows)
+    print("✅ Screener tab updated.")
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print("❌ Fatal error:", e)
