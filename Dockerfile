@@ -55,46 +55,67 @@ def update_tickers_sheet(gc, tickers):
         ws.append_rows([[t] for t in new_tickers])
     return list(set(existing + new_tickers))
 
-# === POLYGON INDICATOR HELPERS ===
-
-def throttle_request():
-    time.sleep(15)  # ⏱ Space each API call by 15s
-
-def fetch_polygon_indicator(ticker, indicator, params=None):
-    url = f"https://api.polygon.io/v1/indicators/{indicator}/{ticker}"
-    query = {"apiKey": API_KEY, "timespan": "day", "limit": 1, "order": "desc"}
-    if params:
-        query.update(params)
-    r = requests.get(url, params=query)
-    r.raise_for_status()
-    throttle_request()
-    return r.json().get("results", {}).get("values", [])
-
+# === POLYGON API CALLS (with SLOWDOWN) ===
 def get_price(ticker):
+    time.sleep(15)
     url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/prev"
     r = requests.get(url, params={"adjusted": "true", "apiKey": API_KEY})
     r.raise_for_status()
-    throttle_request()
     return r.json().get("results", [{}])[0].get("c")
 
 def get_ema20(ticker):
-    vals = fetch_polygon_indicator(ticker, "ema", {"window": 20, "series_type": "close"})
-    return vals[0].get("value") if vals else None
+    time.sleep(15)
+    url = f"https://api.polygon.io/v1/indicators/ema/{ticker}"
+    params = {
+        "apiKey": API_KEY,
+        "timespan": "day",
+        "limit": 1,
+        "order": "desc",
+        "window": 20,
+        "series_type": "close"
+    }
+    r = requests.get(url, params=params)
+    r.raise_for_status()
+    values = r.json().get("results", {}).get("values", [])
+    return values[0].get("value") if values else None
 
 def get_rsi14(ticker):
-    vals = fetch_polygon_indicator(ticker, "rsi", {"window": 14, "series_type": "close"})
-    return vals[0].get("value") if vals else None
+    time.sleep(15)
+    url = f"https://api.polygon.io/v1/indicators/rsi/{ticker}"
+    params = {
+        "apiKey": API_KEY,
+        "timespan": "day",
+        "limit": 1,
+        "order": "desc",
+        "window": 14,
+        "series_type": "close"
+    }
+    r = requests.get(url, params=params)
+    r.raise_for_status()
+    values = r.json().get("results", {}).get("values", [])
+    return values[0].get("value") if values else None
 
 def get_macd(ticker):
-    vals = fetch_polygon_indicator(ticker, "macd", {
-        "short_window": 12, "long_window": 26, "signal_window": 9, "series_type": "close"
-    })
-    if vals:
-        return vals[0].get("value"), vals[0].get("signal")
+    time.sleep(15)
+    url = f"https://api.polygon.io/v1/indicators/macd/{ticker}"
+    params = {
+        "apiKey": API_KEY,
+        "timespan": "day",
+        "limit": 1,
+        "order": "desc",
+        "short_window": 12,
+        "long_window": 26,
+        "signal_window": 9,
+        "series_type": "close"
+    }
+    r = requests.get(url, params=params)
+    r.raise_for_status()
+    values = r.json().get("results", {}).get("values", [])
+    if values:
+        return values[0].get("value"), values[0].get("signal")
     return None, None
 
-# === SCREEN LOGIC ===
-
+# === ANALYSIS ===
 def analyze_ticker(ticker):
     try:
         price = get_price(ticker)
@@ -123,10 +144,8 @@ def analyze_ticker(ticker):
         return [ticker, "", "", "", "", "", "", ""]
 
 # === MAIN ===
-
 def main():
     print("🚀 Launching screener bot")
-
     gc = get_google_client()
 
     print("🌐 Scraping Google Finance...")
