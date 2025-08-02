@@ -32,7 +32,9 @@ def scrape_tickers():
             # ONLY ON FIRST REQUEST!
             resp = requests.get(next_url, params=params)
         else:
-            # NO params! Not params=None, just no params at all.
+            # If next_url is relative, add base
+            if next_url.startswith("/"):
+                next_url = "https://api.polygon.io" + next_url
             resp = requests.get(next_url)
         resp.raise_for_status()
         data = resp.json()
