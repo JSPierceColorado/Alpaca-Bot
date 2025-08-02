@@ -55,48 +55,73 @@ def update_tickers_sheet(gc, tickers):
         ws.append_rows([[t] for t in new_tickers])
     return list(set(existing + new_tickers))
 
-# === POLYGON INDICATOR HELPERS ===
-
-def fetch_polygon_indicator(ticker, indicator, params=None):
-    url = f"https://api.polygon.io/v1/indicators/{indicator}/{ticker}"
-    query = {"apiKey": API_KEY, "timespan": "day", "limit": 1, "order": "desc"}
-    if params:
-        query.update(params)
-    r = requests.get(url, params=query)
-    r.raise_for_status()
-    d = r.json()
-    return d.get("results", {}).get("values", [])
-
+# === POLYGON API CALLS ===
 def get_price(ticker):
     url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/prev"
-    r = requests.get(url, params={"adjusted": "true", "apiKey": API_KEY})
-    r.raise_for_status()
-    return r.json().get("results", [{}])[0].get("c")
+    data = requests.get(url, params={"adjusted": "true", "apiKey": API_KEY})
+    data.raise_for_status()
+    return data.json().get("results", [{}])[0].get("c")
 
 def get_ema20(ticker):
-    vals = fetch_polygon_indicator(ticker, "ema", {"window": 20, "series_type": "close"})
-    return vals[0].get("value") if vals else None
+    url = f"https://api.polygon.io/v1/indicators/ema/{ticker}"
+    params = {
+        "apiKey": API_KEY,
+        "timespan": "day",
+        "limit": 1,
+        "order": "desc",
+        "window": 20,
+        "series_type": "close"
+    }
+    data = requests.get(url, params=params)
+    data.raise_for_status()
+    values = data.json().get("results", {}).get("values", [])
+    return values[0].get("value") if values else None
 
 def get_rsi14(ticker):
-    vals = fetch_polygon_indicator(ticker, "rsi", {"window": 14, "series_type": "close"})
-    return vals[0].get("value") if vals else None
+    url = f"https://api.polygon.io/v1/indicators/rsi/{ticker}"
+    params = {
+        "apiKey": API_KEY,
+        "timespan": "day",
+        "limit": 1,
+        "order": "desc",
+        "window": 14,
+        "series_type": "close"
+    }
+    data = requests.get(url, params=params)
+    data.raise_for_status()
+    values = data.json().get("results", {}).get("values", [])
+    return values[0].get("value") if values else None
 
 def get_macd(ticker):
-    vals = fetch_polygon_indicator(ticker, "macd", {
-        "short_window": 12, "long_window": 26, "signal_window": 9, "series_type": "close"
-    })
-    if vals:
-        return vals[0].get("value"), vals[0].get("signal")
+    url = f"https://api.polygon.io/v1/indicators/macd/{ticker}"
+    params = {
+        "apiKey": API_KEY,
+        "timespan": "day",
+        "limit": 1,
+        "order": "desc",
+        "short_window": 12,
+        "long_window": 26,
+        "signal_window": 9,
+        "series_type": "close"
+    }
+    data = requests.get(url, params=params)
+    data.raise_for_status()
+    values = data.json().get("results", {}).get("values", [])
+    if values:
+        return values[0].get("value"), values[0].get("signal")
     return None, None
 
-# === SCREEN LOGIC ===
-
+# === ANALYSIS ===
 def analyze_ticker(ticker):
     try:
         price = get_price(ticker)
+        time.sleep(15)
         ema20 = get_ema20(ticker)
+        time.sleep(15)
         rsi = get_rsi14(ticker)
+        time.sleep(15)
         macd, signal = get_macd(ticker)
+        time.sleep(15)
 
         is_bullish = (
             rsi is not None and rsi < 35 and
@@ -119,28 +144,24 @@ def analyze_ticker(ticker):
         return [ticker, "", "", "", "", "", "", ""]
 
 # === MAIN ===
-
 def main():
     print("🚀 Launching screener bot")
-
-    # Step 1: Connect Sheets + scrape tickers
     gc = get_google_client()
+
     print("🌐 Scraping Google Finance...")
     scraped = scrape_tickers()
     print(f"✅ Scraped {len(scraped)} tickers")
 
-    # Step 2: Update tickers tab
     tickers = update_tickers_sheet(gc, scraped)
     print(f"🧾 Tracking {len(tickers)} tickers in sheet")
 
-    # Step 3: Analyze tickers
     print("📊 Analyzing tickers for bullish signals...")
     rows = []
     for t in tickers:
         print(f"🔍 {t}")
-        rows.append(analyze_ticker(t))
+        row = analyze_ticker(t)
+        rows.append(row)
 
-    # Step 4: Write to screener tab
     ws = gc.open(SHEET_NAME).worksheet(SCREENER_TAB)
     ws.clear()
     ws.append_row(["Ticker", "Price", "EMA_20", "RSI_14", "MACD", "Signal", "Bullish Signal", "Timestamp"])
