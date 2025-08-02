@@ -57,7 +57,7 @@ def update_tickers_sheet(gc, tickers):
 
 # === POLYGON API CALLS (with SLOWDOWN) ===
 def get_with_throttle(url, params):
-    time.sleep(16)  # Ensures at most 3-4 requests per minute
+    time.sleep(16)  # Enforces at most ~3.75 requests per minute
     r = requests.get(url, params=params)
     r.raise_for_status()
     return r.json()
