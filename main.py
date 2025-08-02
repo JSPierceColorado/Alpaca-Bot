@@ -26,33 +26,27 @@ def scrape_tickers():
 
     tickers = set()
     pattern = re.compile(r"/quote/([A-Z0-9.]+):([A-Z0-9]+)")
-
     urls = [
-        "https://www.google.com/finance/markets/most-active?hl=en",
-        "https://www.google.com/finance/?hl=en",
+        "https://www.google.com/finance/?hl=en",  # Trending tab
         "https://www.google.com/finance/markets/gainers?hl=en",
-        "https://www.google.com/finance/markets/losers?hl=en"
+        "https://www.google.com/finance/markets/losers?hl=en",
     ]
-
     print("🌐 Scraping the following pages for tickers:")
     for url in urls:
         print(f"  - {url}")
 
     for url in urls:
         driver.get(url)
-        time.sleep(2)
+        time.sleep(5)
         soup = BeautifulSoup(driver.page_source, "html.parser")
-        found = 0
         for a in soup.find_all("a", href=True):
             match = pattern.search(a["href"])
             if match:
                 ticker = match.group(1)
                 exch = match.group(2)
-                # Uncomment next line to only include US stocks:
+                # Uncomment if you want only US stocks:
                 # if exch not in {"NASDAQ", "NYSE", "AMEX", "NYSEARCA"}: continue
                 tickers.add(ticker)
-                found += 1
-        print(f"    {found} ticker links found on {url}")
     driver.quit()
     print(f"Total unique tickers gathered: {len(tickers)}")
     return sorted(tickers)
@@ -64,6 +58,12 @@ def update_tickers_sheet(gc, tickers):
     if new_tickers:
         ws.append_rows([[t] for t in new_tickers])
     return list(set(existing + new_tickers))
+
+def get_all_tickers_from_sheet(gc):
+    ws = gc.open(SHEET_NAME).worksheet(TICKERS_TAB)
+    tickers = ws.col_values(1)
+    print(f"📒 Loaded {len(tickers)} tickers from sheet.")
+    return tickers
 
 def get_price(ticker):
     url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/prev"
@@ -152,11 +152,12 @@ def main():
     gc = get_google_client()
 
     print("🌐 Scraping Google Finance...")
-    scraped = scrape_tickers()
-    print(f"✅ Scraped {len(scraped)} tickers")
+    scraped_tickers = scrape_tickers()
+    print(f"✅ Scraped {len(scraped_tickers)} tickers from web.")
 
-    tickers = update_tickers_sheet(gc, scraped)
-    print(f"🧾 Tracking {len(tickers)} tickers in sheet")
+    update_tickers_sheet(gc, scraped_tickers)
+    tickers = get_all_tickers_from_sheet(gc)
+    print(f"🧾 Will analyze {len(tickers)} tickers (from sheet) for bullish signals.")
 
     print("📊 Analyzing tickers for bullish signals...")
     rows = []
