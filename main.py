@@ -24,22 +24,23 @@ def scrape_tickers():
         "apiKey": API_KEY
     }
     all_tickers = set()
-    next_url = url
     total = 0
+    next_url = url
 
     while next_url:
-        resp = requests.get(next_url, params=params if next_url == url else None)
+        if next_url == url:
+            resp = requests.get(next_url, params=params)
+        else:
+            resp = requests.get(next_url)  # Do NOT pass params!
         resp.raise_for_status()
         data = resp.json()
         tickers = [item["ticker"] for item in data["results"]
                    if item.get("primary_exchange") in {"XNYS", "XNAS", "ARCX"}]
-        # Optional: Only standard tickers (A-Z 1-5 chars)
         tickers = [t for t in tickers if re.match(r"^[A-Z]{1,5}$", t)]
         all_tickers.update(tickers)
         total += len(tickers)
         print(f"    Fetched {len(tickers)} tickers, total so far: {total}")
         next_url = data.get("next_url")
-        params = None
 
     print(f"✅ Fetched {len(all_tickers)} total tickers from Polygon")
     return sorted(all_tickers)
