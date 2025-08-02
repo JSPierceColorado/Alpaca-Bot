@@ -56,57 +56,51 @@ def update_tickers_sheet(gc, tickers):
     return list(set(existing + new_tickers))
 
 # === POLYGON API CALLS ===
+def fetch_with_retry(url, params):
+    for attempt in range(5):
+        try:
+            resp = requests.get(url, params=params)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            print(f"  ⏳ Retry {attempt+1}/5 for {url} due to error: {e}")
+            time.sleep(15)
+    return {}
+
 def get_price(ticker):
     url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/prev"
-    data = requests.get(url, params={"adjusted": "true", "apiKey": API_KEY})
-    data.raise_for_status()
-    return data.json().get("results", [{}])[0].get("c")
+    data = fetch_with_retry(url, {"adjusted": "true", "apiKey": API_KEY})
+    return data.get("results", [{}])[0].get("c")
 
 def get_ema20(ticker):
     url = f"https://api.polygon.io/v1/indicators/ema/{ticker}"
     params = {
-        "apiKey": API_KEY,
-        "timespan": "day",
-        "limit": 1,
-        "order": "desc",
-        "window": 20,
-        "series_type": "close"
+        "apiKey": API_KEY, "timespan": "day", "limit": 1,
+        "order": "desc", "window": 20, "series_type": "close"
     }
-    data = requests.get(url, params=params)
-    data.raise_for_status()
-    values = data.json().get("results", {}).get("values", [])
+    data = fetch_with_retry(url, params)
+    values = data.get("results", {}).get("values", [])
     return values[0].get("value") if values else None
 
 def get_rsi14(ticker):
     url = f"https://api.polygon.io/v1/indicators/rsi/{ticker}"
     params = {
-        "apiKey": API_KEY,
-        "timespan": "day",
-        "limit": 1,
-        "order": "desc",
-        "window": 14,
-        "series_type": "close"
+        "apiKey": API_KEY, "timespan": "day", "limit": 1,
+        "order": "desc", "window": 14, "series_type": "close"
     }
-    data = requests.get(url, params=params)
-    data.raise_for_status()
-    values = data.json().get("results", {}).get("values", [])
+    data = fetch_with_retry(url, params)
+    values = data.get("results", {}).get("values", [])
     return values[0].get("value") if values else None
 
 def get_macd(ticker):
     url = f"https://api.polygon.io/v1/indicators/macd/{ticker}"
     params = {
-        "apiKey": API_KEY,
-        "timespan": "day",
-        "limit": 1,
-        "order": "desc",
-        "short_window": 12,
-        "long_window": 26,
-        "signal_window": 9,
+        "apiKey": API_KEY, "timespan": "day", "limit": 1, "order": "desc",
+        "short_window": 12, "long_window": 26, "signal_window": 9,
         "series_type": "close"
     }
-    data = requests.get(url, params=params)
-    data.raise_for_status()
-    values = data.json().get("results", {}).get("values", [])
+    data = fetch_with_retry(url, params)
+    values = data.get("results", {}).get("values", [])
     if values:
         return values[0].get("value"), values[0].get("signal")
     return None, None
@@ -114,12 +108,16 @@ def get_macd(ticker):
 # === ANALYSIS ===
 def analyze_ticker(ticker):
     try:
+        print(f"🔍 {ticker}")
         price = get_price(ticker)
         time.sleep(15)
+
         ema20 = get_ema20(ticker)
         time.sleep(15)
+
         rsi = get_rsi14(ticker)
         time.sleep(15)
+
         macd, signal = get_macd(ticker)
         time.sleep(15)
 
@@ -158,7 +156,6 @@ def main():
     print("📊 Analyzing tickers for bullish signals...")
     rows = []
     for t in tickers:
-        print(f"🔍 {t}")
         row = analyze_ticker(t)
         rows.append(row)
 
