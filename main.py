@@ -18,66 +18,35 @@ def get_google_client():
     return gspread.service_account_from_dict(creds)
 
 def scrape_tickers():
-    options = Options()
-    options.add_argument("--headless")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    driver = webdriver.Chrome(options=options)
+    print("🌐 Fetching tickers from Polygon.io ticker API...")
+    API_KEY = os.getenv("API_KEY")
+    url = "https://api.polygon.io/v3/reference/tickers"
+    params = {
+        "market": "stocks",
+        "active": "true",
+        "limit": 1000,
+        "apiKey": API_KEY
+    }
+    all_tickers = set()
+    next_url = url
+    total = 0
 
-    tickers = set()
+    while next_url:
+        resp = requests.get(next_url, params=params if next_url == url else None)
+        resp.raise_for_status()
+        data = resp.json()
+        tickers = [item["ticker"] for item in data["results"] if item.get("primary_exchange") in {"XNYS", "XNAS", "ARCX"}]
+        all_tickers.update(tickers)
+        total += len(tickers)
+        print(f"    Fetched {len(tickers)} tickers, total so far: {total}")
+        # Get next_url for pagination
+        next_url = data.get("next_url")
+        params = None  # Only needed on first call
 
-    urls = [
-        "https://www.google.com/finance/?hl=en",
-        "https://www.google.com/finance/markets/gainers?hl=en",
-        "https://www.google.com/finance/markets/losers?hl=en",
-        "https://www.google.com/finance/markets/climate-leaders?hl=en",
-        "https://www.google.com/finance/markets/most-active?hl=en",
-        "https://finance.yahoo.com/",
-        "https://finance.yahoo.com/markets/stocks/trending/",
-        "https://finance.yahoo.com/research-hub/screener/undervalued_growth_stocks/",
-    ]
-
-    google_pattern = re.compile(r"/quote/([A-Z0-9.]+):([A-Z0-9]+)")
-    yahoo_pattern1 = re.compile(r"/quote/([A-Z0-9.]+)\?p=[A-Z0-9.]+")
-    yahoo_pattern2 = re.compile(r"/quote/([A-Z0-9.]+)$")  # /quote/TSLA
-
-    print("🌐 Scraping the following pages for tickers:")
-    for url in urls:
-        print(f"  - {url}")
-
-    for url in urls:
-        driver.get(url)
-        # Wait longer for Yahoo, which loads content more slowly
-        if "yahoo" in url:
-            print("    (Yahoo page: waiting 12 seconds for JS content)")
-            time.sleep(12)
-        else:
-            time.sleep(5)
-        soup = BeautifulSoup(driver.page_source, "html.parser")
-        found = set()
-        for a in soup.find_all("a", href=True):
-            href = a["href"]
-            # Google Finance
-            match_google = google_pattern.search(href)
-            # Yahoo Finance patterns
-            match_yahoo1 = yahoo_pattern1.search(href)
-            match_yahoo2 = yahoo_pattern2.search(href)
-            if match_google:
-                ticker = match_google.group(1)
-                tickers.add(ticker)
-                found.add(ticker)
-            elif match_yahoo1:
-                ticker = match_yahoo1.group(1)
-                tickers.add(ticker)
-                found.add(ticker)
-            elif match_yahoo2:
-                ticker = match_yahoo2.group(1)
-                tickers.add(ticker)
-                found.add(ticker)
-        print(f"    {len(found)} ticker links found on {url}: {', '.join(list(found)[:10])} ...")
-    driver.quit()
-    print(f"Total unique tickers gathered: {len(tickers)}")
-    return sorted(tickers)
+    print(f"✅ Fetched {len(all_tickers)} total tickers from Polygon")
+    # If you want to limit to only common stocks (no ETFs, etc), filter here:
+    # all_tickers = [t for t in all_tickers if t.isalpha()]
+    return sorted(all_tickers)
 
 def update_tickers_sheet(gc, tickers):
     ws = gc.open(SHEET_NAME).worksheet(TICKERS_TAB)
