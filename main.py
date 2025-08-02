@@ -4,64 +4,79 @@ import time
 import requests
 import gspread
 
-# === Config ===
-TAAPI_SECRET = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjbHVlIjoiNjg4ZDg3NDM4MDZmZjE2NTFlMjgyZmY1IiwiaWF0IjoxNzU0MTA1OTc4LCJleHAiOjMzMjU4NTY5OTc4fQ.x2UU7E29mtXu2sP6ykFqA1Tgo_bY2Lip6W9xT5ilKg0"
+# === Configuration ===
+FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")  # You must set this in Railway env vars
 TICKER = "GOOGL"
-INTERVAL = "1d"
+INTERVAL = "D"
+SHEET_NAME = "Trading Log"
+TAB_NAME = "screener"
 
 # === Google Sheets ===
 def get_google_client():
     creds = json.loads(os.getenv("GOOGLE_CREDS_JSON"))
     return gspread.service_account_from_dict(creds)
 
-# === TAAPI.IO ===
-def fetch_indicators(symbol: str):
-    url = "https://api.taapi.io/bulk"
-    payload = {
-        "secret": TAAPI_SECRET,
-        "construct": {
-            "type": "stocks",
-            "symbol": symbol,
-            "interval": INTERVAL,
-            "indicators": [
-                {"indicator": "price"},
-                {"indicator": "ema", "period": 20},
-                {"indicator": "stochrsi", "period": 14}
-            ]
-        }
+# === Finnhub API Calls ===
+def fetch_price(ticker):
+    url = f"https://finnhub.io/api/v1/quote?symbol={ticker}&token={FINNHUB_API_KEY}"
+    resp = requests.get(url)
+    resp.raise_for_status()
+    return resp.json().get("c")  # current price
+
+def fetch_indicator(ticker, indicator, params=None):
+    url = f"https://finnhub.io/api/v1/indicator"
+    query = {
+        "symbol": ticker,
+        "resolution": INTERVAL,
+        "token": FINNHUB_API_KEY,
+        "indicator": indicator,
     }
-    response = requests.post(url, json=payload)
-    response.raise_for_status()
-    data = response.json()
+    if params:
+        query.update(params)
+    resp = requests.get(url, params=query)
+    resp.raise_for_status()
+    data = resp.json()
+    return data
 
-    print("🔎 Raw TAAPI.IO response:")
-    print(json.dumps(data, indent=2))
-
-    if "value" not in data:
-        raise ValueError(f"TAAPI.IO returned an error or invalid structure: {data}")
-
-    return data["value"]
-
-# === Main ===
+# === Main Logic ===
 def main():
-    print("🚀 Fetching indicators for GOOGL...")
-    data = fetch_indicators(TICKER)
+    print(f"🚀 Fetching indicators for {TICKER} using Finnhub...")
 
-    price = data.get("price", "N/A")
-    ema20 = data.get("ema", "N/A")
-    stochrsi = data.get("stochrsi", {}).get("value", "N/A")
+    # Fetch current price
+    price = fetch_price(TICKER)
+    print(f"💰 Current Price: {price}")
 
-    print(f"📊 Price: {price}, EMA20: {ema20}, StochRSI: {stochrsi}")
+    # Fetch EMA(20)
+    ema_data = fetch_indicator(TICKER, "ema", {"timeperiod": 20})
+    ema_20 = ema_data.get("ema", [])[-1] if ema_data.get("ema") else "N/A"
 
+    # Fetch RSI(14)
+    rsi_data = fetch_indicator(TICKER, "rsi", {"timeperiod": 14})
+    rsi_14 = rsi_data.get("rsi", [])[-1] if rsi_data.get("rsi") else "N/A"
+
+    # Fetch MACD
+    macd_data = fetch_indicator(TICKER, "macd", {"timeperiod": 12, "series_type": "close"})
+    macd = (
+        macd_data.get("macd", [])[-1] if macd_data.get("macd") else "N/A"
+    )
+    signal = (
+        macd_data.get("macdSignal", [])[-1] if macd_data.get("macdSignal") else "N/A"
+    )
+
+    print(f"📈 EMA(20): {ema_20}, RSI(14): {rsi_14}, MACD: {macd}, Signal: {signal}")
+
+    # Write to Google Sheet
     gc = get_google_client()
-    ws = gc.open("Trading Log").worksheet("screener")
+    ws = gc.open(SHEET_NAME).worksheet(TAB_NAME)
     ws.clear()
-    ws.append_row(["Ticker", "Price", "EMA_20", "StochRSI", "Timestamp"])
+    ws.append_row(["Ticker", "Price", "EMA_20", "RSI_14", "MACD", "Signal", "Timestamp"])
     ws.append_row([
         TICKER,
-        round(price, 2) if isinstance(price, (float, int)) else price,
-        round(ema20, 2) if isinstance(ema20, (float, int)) else ema20,
-        round(stochrsi, 2) if isinstance(stochrsi, (float, int)) else stochrsi,
+        round(price, 2) if isinstance(price, (int, float)) else price,
+        round(ema_20, 2) if isinstance(ema_20, (int, float)) else ema_20,
+        round(rsi_14, 2) if isinstance(rsi_14, (int, float)) else rsi_14,
+        round(macd, 2) if isinstance(macd, (int, float)) else macd,
+        round(signal, 2) if isinstance(signal, (int, float)) else signal,
         time.strftime("%Y-%m-%dT%H:%M:%SZ")
     ])
     print("✅ Screener tab updated.")
