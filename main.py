@@ -29,10 +29,9 @@ def scrape_tickers():
 
     while next_url:
         if next_url == url:
-            # ONLY ON FIRST REQUEST!
             resp = requests.get(next_url, params=params)
         else:
-            # If next_url is relative, add base
+            # Always ensure next_url is a full URL
             if next_url.startswith("/"):
                 next_url = "https://api.polygon.io" + next_url
             resp = requests.get(next_url)
