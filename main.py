@@ -8,23 +8,15 @@ from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 
-# === CONFIG ===
 API_KEY = os.getenv("API_KEY")
 SHEET_NAME = "Trading Log"
 TICKERS_TAB = "tickers"
 SCREENER_TAB = "screener"
-GOOGLE_FINANCE_URLS = [
-    "https://www.google.com/finance/markets/most-active?hl=en",
-    "https://www.google.com/finance/markets/gainers?hl=en",
-    "https://www.google.com/finance/markets/losers?hl=en",
-]
 
-# === GOOGLE SHEETS ===
 def get_google_client():
     creds = json.loads(os.getenv("GOOGLE_CREDS_JSON"))
     return gspread.service_account_from_dict(creds)
 
-# === TICKER SCRAPER ===
 def scrape_tickers():
     options = Options()
     options.add_argument("--headless")
@@ -33,9 +25,15 @@ def scrape_tickers():
     driver = webdriver.Chrome(options=options)
 
     tickers = set()
-    pattern = re.compile(r"/quote/([A-Z.]+):NASDAQ")
+    pattern = re.compile(r"/quote/([A-Z.]+):(NASDAQ|NYSE|AMEX|NYSEARCA|BATS|OTCMKTS)")
 
-    for url in GOOGLE_FINANCE_URLS:
+    urls = [
+        "https://www.google.com/finance/?hl=en",  # Trending tab!
+        "https://www.google.com/finance/markets/gainers?hl=en",
+        "https://www.google.com/finance/markets/losers?hl=en",
+    ]
+
+    for url in urls:
         driver.get(url)
         time.sleep(2)
         soup = BeautifulSoup(driver.page_source, "html.parser")
@@ -43,7 +41,6 @@ def scrape_tickers():
             match = pattern.search(a["href"])
             if match:
                 tickers.add(match.group(1))
-
     driver.quit()
     return sorted(tickers)
 
@@ -55,7 +52,6 @@ def update_tickers_sheet(gc, tickers):
         ws.append_rows([[t] for t in new_tickers])
     return list(set(existing + new_tickers))
 
-# === POLYGON API WRAPPERS ===
 def get_price(ticker):
     url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/prev"
     response = requests.get(url, params={"adjusted": "true", "apiKey": API_KEY})
@@ -111,7 +107,6 @@ def get_macd(ticker):
         return values[0].get("value"), values[0].get("signal")
     return None, None
 
-# === ANALYSIS ===
 def analyze_ticker(ticker):
     try:
         price = get_price(ticker)
@@ -139,7 +134,6 @@ def analyze_ticker(ticker):
         print(f"⚠️ {ticker} failed: {e}")
         return [ticker, "", "", "", "", "", "", ""]
 
-# === MAIN ===
 def main():
     print("🚀 Launching screener bot")
     gc = get_google_client()
