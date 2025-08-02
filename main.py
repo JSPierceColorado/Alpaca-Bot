@@ -4,9 +4,6 @@ import time
 import re
 import requests
 import gspread
-from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
 
 API_KEY = os.getenv("API_KEY")
 SHEET_NAME = "Trading Log"
@@ -19,7 +16,6 @@ def get_google_client():
 
 def scrape_tickers():
     print("🌐 Fetching tickers from Polygon.io ticker API...")
-    API_KEY = os.getenv("API_KEY")
     url = "https://api.polygon.io/v3/reference/tickers"
     params = {
         "market": "stocks",
@@ -35,17 +31,17 @@ def scrape_tickers():
         resp = requests.get(next_url, params=params if next_url == url else None)
         resp.raise_for_status()
         data = resp.json()
-        tickers = [item["ticker"] for item in data["results"] if item.get("primary_exchange") in {"XNYS", "XNAS", "ARCX"}]
+        tickers = [item["ticker"] for item in data["results"]
+                   if item.get("primary_exchange") in {"XNYS", "XNAS", "ARCX"}]
+        # Optional: Only standard tickers (A-Z 1-5 chars)
+        tickers = [t for t in tickers if re.match(r"^[A-Z]{1,5}$", t)]
         all_tickers.update(tickers)
         total += len(tickers)
         print(f"    Fetched {len(tickers)} tickers, total so far: {total}")
-        # Get next_url for pagination
         next_url = data.get("next_url")
-        params = None  # Only needed on first call
+        params = None
 
     print(f"✅ Fetched {len(all_tickers)} total tickers from Polygon")
-    # If you want to limit to only common stocks (no ETFs, etc), filter here:
-    # all_tickers = [t for t in all_tickers if t.isalpha()]
     return sorted(all_tickers)
 
 def update_tickers_sheet(gc, tickers):
@@ -148,7 +144,11 @@ def main():
     print("🚀 Launching screener bot")
     gc = get_google_client()
 
-    # ... (scraping and updating tickers as before)
+    # Fetch latest tickers from Polygon
+    tickers = scrape_tickers()
+
+    # Write tickers to tickers tab, avoid duplicates
+    tickers = update_tickers_sheet(gc, tickers)
 
     print("📊 Analyzing tickers for bullish signals...")
     rows = []
@@ -157,7 +157,7 @@ def main():
         row = analyze_ticker(t)
         rows.append(row)
 
-    # === Clear screener tab before posting new data ===
+    # Clear screener tab and update with new data
     ws = gc.open(SHEET_NAME).worksheet(SCREENER_TAB)
     print("🧹 Clearing screener tab of all existing data...")
     ws.clear()
