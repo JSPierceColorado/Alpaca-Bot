@@ -4,85 +4,92 @@ import time
 import requests
 import gspread
 
-# === Configuration ===
-FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")  # You must set this in Railway env vars
+# === Config ===
+API_KEY = "0qwRnYgKpKFX5YQ5dxRs5_DKZ8fHXs6d"
 TICKER = "GOOGL"
-INTERVAL = "D"
 SHEET_NAME = "Trading Log"
 TAB_NAME = "screener"
 
-# === Google Sheets ===
+# === Google Sheets client ===
 def get_google_client():
     creds = json.loads(os.getenv("GOOGLE_CREDS_JSON"))
     return gspread.service_account_from_dict(creds)
 
-# === Finnhub API Calls ===
-def fetch_price(ticker):
-    url = f"https://finnhub.io/api/v1/quote?symbol={ticker}&token={FINNHUB_API_KEY}"
-    resp = requests.get(url)
-    resp.raise_for_status()
-    return resp.json().get("c")  # current price
+# === Polygon indicator helpers ===
 
-def fetch_indicator(ticker, indicator, params=None):
-    url = f"https://finnhub.io/api/v1/indicator"
-    query = {
-        "symbol": ticker,
-        "resolution": INTERVAL,
-        "token": FINNHUB_API_KEY,
-        "indicator": indicator,
-    }
+def fetch_indicator(indicator, params=None):
+    url = f"https://api.polygon.io/v1/indicators/{indicator}/{TICKER}"
+    query = {"apiKey": API_KEY, "timespan": "day", "order": "desc", "limit": 1}
     if params:
         query.update(params)
-    resp = requests.get(url, params=query)
+    r = requests.get(url, params=query)
+    r.raise_for_status()
+    d = r.json()
+    return d.get("results", {}).get("values", [])
+
+# Specific fetch functions:
+def get_ema20():
+    vals = fetch_indicator("ema", {"window": 20, "series_type": "close"})
+    return vals[0].get("value") if vals else None
+
+def get_sma50():
+    vals = fetch_indicator("sma", {"window": 50, "series_type": "close"})
+    return vals[0].get("value") if vals else None
+
+def get_rsi14():
+    vals = fetch_indicator("rsi", {"window": 14, "series_type": "close"})
+    return vals[0].get("value") if vals else None
+
+def get_macd():
+    vals = fetch_indicator("macd", {
+        "short_window": 12, "long_window": 26, "signal_window": 9, "series_type": "close"
+    })
+    if vals:
+        v = vals[0]
+        return v.get("value"), v.get("signal"), v.get("histogram")
+    return None, None, None
+
+def get_price():
+    url = f"https://api.polygon.io/v1/last/stocks/{TICKER}"
+    resp = requests.get(url, params={"apiKey": API_KEY})
     resp.raise_for_status()
-    data = resp.json()
-    return data
+    return resp.json().get("last", {}).get("price")
 
-# === Main Logic ===
+# === Main ===
+
 def main():
-    print(f"🚀 Fetching indicators for {TICKER} using Finnhub...")
+    print(f"🔍 Fetching indicators for {TICKER} via Polygon.io")
 
-    # Fetch current price
-    price = fetch_price(TICKER)
-    print(f"💰 Current Price: {price}")
+    price = get_price()
+    ema20 = get_ema20()
+    sma50 = get_sma50()
+    rsi14 = get_rsi14()
+    macd_val, macd_sig, macd_hist = get_macd()
 
-    # Fetch EMA(20)
-    ema_data = fetch_indicator(TICKER, "ema", {"timeperiod": 20})
-    ema_20 = ema_data.get("ema", [])[-1] if ema_data.get("ema") else "N/A"
+    print(f"Price: {price}, EMA20: {ema20}, SMA50: {sma50}, RSI14: {rsi14}, MACD: {macd_val}/{macd_sig}/{macd_hist}")
 
-    # Fetch RSI(14)
-    rsi_data = fetch_indicator(TICKER, "rsi", {"timeperiod": 14})
-    rsi_14 = rsi_data.get("rsi", [])[-1] if rsi_data.get("rsi") else "N/A"
-
-    # Fetch MACD
-    macd_data = fetch_indicator(TICKER, "macd", {"timeperiod": 12, "series_type": "close"})
-    macd = (
-        macd_data.get("macd", [])[-1] if macd_data.get("macd") else "N/A"
-    )
-    signal = (
-        macd_data.get("macdSignal", [])[-1] if macd_data.get("macdSignal") else "N/A"
-    )
-
-    print(f"📈 EMA(20): {ema_20}, RSI(14): {rsi_14}, MACD: {macd}, Signal: {signal}")
-
-    # Write to Google Sheet
     gc = get_google_client()
     ws = gc.open(SHEET_NAME).worksheet(TAB_NAME)
     ws.clear()
-    ws.append_row(["Ticker", "Price", "EMA_20", "RSI_14", "MACD", "Signal", "Timestamp"])
-    ws.append_row([
+    headers = ["Ticker", "Price", "EMA_20", "SMA_50", "RSI_14", "MACD", "Signal", "Histogram", "Timestamp"]
+    ws.append_row(headers)
+
+    row = [
         TICKER,
-        round(price, 2) if isinstance(price, (int, float)) else price,
-        round(ema_20, 2) if isinstance(ema_20, (int, float)) else ema_20,
-        round(rsi_14, 2) if isinstance(rsi_14, (int, float)) else rsi_14,
-        round(macd, 2) if isinstance(macd, (int, float)) else macd,
-        round(signal, 2) if isinstance(signal, (int, float)) else signal,
+        round(price, 2) if price else "",
+        round(ema20, 2) if ema20 else "",
+        round(sma50, 2) if sma50 else "",
+        round(rsi14, 2) if rsi14 else "",
+        round(macd_val, 4) if macd_val else "",
+        round(macd_sig, 4) if macd_sig else "",
+        round(macd_hist, 4) if macd_hist else "",
         time.strftime("%Y-%m-%dT%H:%M:%SZ")
-    ])
-    print("✅ Screener tab updated.")
+    ]
+    ws.append_row(row)
+    print("✅ Screener tab updated with fresh data.")
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print("❌ Error:", e)
