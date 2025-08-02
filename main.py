@@ -5,8 +5,8 @@ import requests
 import gspread
 
 # === Config ===
-API_KEY = os.getenv("API_KEY")  # Make sure this is set in Railway env vars
-TICKER = "GOOG"  # Changed from GOOGL to GOOG for better API compatibility
+API_KEY = os.getenv("API_KEY")  # Must be set in Railway
+TICKER = "GOOG"
 SHEET_NAME = "Trading Log"
 TAB_NAME = "screener"
 
@@ -49,10 +49,10 @@ def get_macd():
     return None, None, None
 
 def get_price():
-    url = f"https://api.polygon.io/v2/last/trade/stocks/{TICKER}"
-    resp = requests.get(url, params={"apiKey": API_KEY})
+    url = f"https://api.polygon.io/v2/aggs/ticker/{TICKER}/prev"
+    resp = requests.get(url, params={"adjusted": "true", "apiKey": API_KEY})
     resp.raise_for_status()
-    return resp.json().get("results", {}).get("p")  # 'p' = price
+    return resp.json().get("results", [{}])[0].get("c")  # 'c' = close price
 
 # === Main ===
 
