@@ -26,7 +26,6 @@ def scrape_tickers():
 
     tickers = set()
 
-    # --- URLs to scrape ---
     urls = [
         "https://www.google.com/finance/?hl=en",
         "https://www.google.com/finance/markets/gainers?hl=en",
@@ -38,11 +37,9 @@ def scrape_tickers():
         "https://finance.yahoo.com/research-hub/screener/undervalued_growth_stocks/",
     ]
 
-    # Google Finance pattern: /quote/TICKER:EXCHANGE
     google_pattern = re.compile(r"/quote/([A-Z0-9.]+):([A-Z0-9]+)")
-
-    # Yahoo Finance pattern: /quote/TICKER?p=TICKER
-    yahoo_pattern = re.compile(r"/quote/([A-Z0-9.]+)\?p=[A-Z0-9.]+")
+    yahoo_pattern1 = re.compile(r"/quote/([A-Z0-9.]+)\?p=[A-Z0-9.]+")
+    yahoo_pattern2 = re.compile(r"/quote/([A-Z0-9.]+)$")  # /quote/TSLA
 
     print("🌐 Scraping the following pages for tickers:")
     for url in urls:
@@ -50,20 +47,31 @@ def scrape_tickers():
 
     for url in urls:
         driver.get(url)
-        time.sleep(5)
+        # Wait longer for Yahoo, which loads content more slowly
+        if "yahoo" in url:
+            print("    (Yahoo page: waiting 12 seconds for JS content)")
+            time.sleep(12)
+        else:
+            time.sleep(5)
         soup = BeautifulSoup(driver.page_source, "html.parser")
         found = set()
         for a in soup.find_all("a", href=True):
             href = a["href"]
+            # Google Finance
             match_google = google_pattern.search(href)
-            match_yahoo = yahoo_pattern.search(href)
+            # Yahoo Finance patterns
+            match_yahoo1 = yahoo_pattern1.search(href)
+            match_yahoo2 = yahoo_pattern2.search(href)
             if match_google:
                 ticker = match_google.group(1)
-                # Optionally, use exchange: match_google.group(2)
                 tickers.add(ticker)
                 found.add(ticker)
-            elif match_yahoo:
-                ticker = match_yahoo.group(1)
+            elif match_yahoo1:
+                ticker = match_yahoo1.group(1)
+                tickers.add(ticker)
+                found.add(ticker)
+            elif match_yahoo2:
+                ticker = match_yahoo2.group(1)
                 tickers.add(ticker)
                 found.add(ticker)
         print(f"    {len(found)} ticker links found on {url}: {', '.join(list(found)[:10])} ...")
