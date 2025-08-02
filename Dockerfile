@@ -57,6 +57,9 @@ def update_tickers_sheet(gc, tickers):
 
 # === POLYGON INDICATOR HELPERS ===
 
+def throttle_request():
+    time.sleep(15)  # ⏱ Space each API call by 15s
+
 def fetch_polygon_indicator(ticker, indicator, params=None):
     url = f"https://api.polygon.io/v1/indicators/{indicator}/{ticker}"
     query = {"apiKey": API_KEY, "timespan": "day", "limit": 1, "order": "desc"}
@@ -64,13 +67,14 @@ def fetch_polygon_indicator(ticker, indicator, params=None):
         query.update(params)
     r = requests.get(url, params=query)
     r.raise_for_status()
-    d = r.json()
-    return d.get("results", {}).get("values", [])
+    throttle_request()
+    return r.json().get("results", {}).get("values", [])
 
 def get_price(ticker):
     url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/prev"
     r = requests.get(url, params={"adjusted": "true", "apiKey": API_KEY})
     r.raise_for_status()
+    throttle_request()
     return r.json().get("results", [{}])[0].get("c")
 
 def get_ema20(ticker):
@@ -123,25 +127,21 @@ def analyze_ticker(ticker):
 def main():
     print("🚀 Launching screener bot")
 
-    # Step 1: Connect Sheets + scrape tickers
     gc = get_google_client()
+
     print("🌐 Scraping Google Finance...")
     scraped = scrape_tickers()
     print(f"✅ Scraped {len(scraped)} tickers")
 
-    # Step 2: Update tickers tab
     tickers = update_tickers_sheet(gc, scraped)
     print(f"🧾 Tracking {len(tickers)} tickers in sheet")
 
-    # Step 3: Analyze tickers (throttled)
     print("📊 Analyzing tickers for bullish signals...")
     rows = []
     for t in tickers:
         print(f"🔍 {t}")
         rows.append(analyze_ticker(t))
-        time.sleep(1.5)  # 🕒 Throttle API usage to avoid 429s
 
-    # Step 4: Write to screener tab
     ws = gc.open(SHEET_NAME).worksheet(SCREENER_TAB)
     ws.clear()
     ws.append_row(["Ticker", "Price", "EMA_20", "RSI_14", "MACD", "Signal", "Bullish Signal", "Timestamp"])
