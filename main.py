@@ -24,13 +24,13 @@ def scrape_tickers_from_url(url):
     print(f"🌐 Scraping: {url}")
     driver = get_driver()
     driver.get(url)
-    time.sleep(5)  # Let the JavaScript render
+    time.sleep(5)  # Let JS load
 
     elements = driver.find_elements(By.TAG_NAME, "a")
     hrefs = [el.get_attribute("href") for el in elements if el.get_attribute("href")]
     driver.quit()
 
-    pattern = re.compile(r'/quote/([A-Z.]+):[A-Z]+')  # Match /quote/AAPL:NASDAQ
+    pattern = re.compile(r'/quote/([A-Z.]+):[A-Z]+')
     tickers = set()
     for href in hrefs:
         match = pattern.search(href)
@@ -38,30 +38,36 @@ def scrape_tickers_from_url(url):
             tickers.add(match.group(1))
 
     print(f"🔍 Found {len(tickers)} tickers")
-    return sorted(tickers)
+    return tickers
 
 def update_ticker_sheet(gc):
-    print("📗 Updating 'tickers' tab...")
+    print("📗 Accessing 'tickers' tab...")
     sh = gc.open("Trading Log")
     sheet = sh.worksheet("tickers")
 
-    # Get existing tickers from column A
     existing = set(sheet.col_values(1))
-    print(f"📄 {len(existing)} existing tickers")
+    print(f"📄 {len(existing)} existing tickers in sheet")
 
-    # Scrape both sources
-    most_active = scrape_tickers_from_url("https://www.google.com/finance/markets/most-active?hl=en")
-    trending = scrape_tickers_from_url("https://www.google.com/finance/?hl=en")
+    urls = [
+        "https://www.google.com/finance/markets/most-active?hl=en",
+        "https://www.google.com/finance/?hl=en",
+        "https://www.google.com/finance/markets/gainers?hl=en",
+        "https://www.google.com/finance/markets/losers?hl=en"
+    ]
 
-    combined = set(most_active + trending)
-    new_tickers = [t for t in combined if t not in existing]
+    combined_tickers = set()
+    for url in urls:
+        tickers = scrape_tickers_from_url(url)
+        combined_tickers.update(tickers)
+
+    new_tickers = [t for t in sorted(combined_tickers) if t not in existing]
 
     if not new_tickers:
         print("📭 No new tickers to add.")
     else:
-        print(f"🆕 Appending {len(new_tickers)} new tickers.")
-        values = [[t] for t in new_tickers]
-        sheet.append_rows(values)
+        print(f"🆕 Adding {len(new_tickers)} new tickers to sheet.")
+        rows = [[t] for t in new_tickers]
+        sheet.append_rows(rows)
 
 # === Entry point ===
 try:
