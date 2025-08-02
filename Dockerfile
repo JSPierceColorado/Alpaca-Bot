@@ -1,10 +1,10 @@
 FROM python:3.12-slim
 
-# Environment variables
+# Environment setup
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Install system dependencies and Chrome for Selenium
+# Install Chrome + ChromeDriver + dependencies
 RUN apt-get update && apt-get install -y \
     wget \
     curl \
@@ -30,5 +30,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy project files
 COPY . .
 
-# Run main script
+# Run main
 CMD ["python", "main.py"]
