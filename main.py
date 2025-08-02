@@ -35,6 +35,10 @@ def scrape_tickers():
             # Always ensure next_url is a full URL
             if next_url.startswith("/"):
                 next_url = "https://api.polygon.io" + next_url
+            # 🔥 Add the API key if not present
+            if "apiKey=" not in next_url:
+                sep = "&" if "?" in next_url else "?"
+                next_url = f"{next_url}{sep}apiKey={API_KEY}"
             print(f"Requesting: {next_url}")
             resp = requests.get(next_url)
         resp.raise_for_status()
