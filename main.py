@@ -2,6 +2,7 @@ import os
 import json
 import time
 import re
+import threading
 import requests
 import gspread
 from bs4 import BeautifulSoup
@@ -20,28 +21,31 @@ GOOGLE_FINANCE_URLS = [
 ]
 
 # === RATE LIMITING ===
-LAST_REQUEST_TIME = 0
 REQUEST_DELAY = 30  # seconds
+LAST_REQUEST_TIME = [0]
+LOCK = threading.Lock()
 
 def rate_limited_get(url, params):
-    global LAST_REQUEST_TIME
-    elapsed = time.time() - LAST_REQUEST_TIME
-    if elapsed < REQUEST_DELAY:
-        time.sleep(REQUEST_DELAY - elapsed)
+    with LOCK:
+        elapsed = time.time() - LAST_REQUEST_TIME[0]
+        if elapsed < REQUEST_DELAY:
+            to_wait = REQUEST_DELAY - elapsed
+            print(f"⏳ Sleeping {to_wait:.1f} seconds to respect API rate limit.")
+            time.sleep(to_wait)
 
-    while True:
-        try:
-            response = requests.get(url, params=params)
-            if response.status_code == 429:
-                print("⏳ Rate limit hit. Sleeping for 60 seconds...")
+        while True:
+            try:
+                response = requests.get(url, params=params)
+                if response.status_code == 429:
+                    print("⏳ Rate limit hit. Sleeping for 60 seconds...")
+                    time.sleep(60)
+                    continue
+                response.raise_for_status()
+                LAST_REQUEST_TIME[0] = time.time()
+                return response
+            except requests.RequestException as e:
+                print(f"❌ Request error: {e}, retrying in 60s...")
                 time.sleep(60)
-                continue
-            response.raise_for_status()
-            LAST_REQUEST_TIME = time.time()
-            return response
-        except requests.RequestException as e:
-            print(f"❌ Request error: {e}, retrying in 60s...")
-            time.sleep(60)
 
 # === GOOGLE SHEETS ===
 def get_google_client():
