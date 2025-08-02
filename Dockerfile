@@ -55,19 +55,16 @@ def update_tickers_sheet(gc, tickers):
         ws.append_rows([[t] for t in new_tickers])
     return list(set(existing + new_tickers))
 
-# === POLYGON API CALLS (with SLOWDOWN) ===
-def get_with_throttle(url, params):
-    time.sleep(16)  # Enforces at most ~3.75 requests per minute
-    r = requests.get(url, params=params)
-    r.raise_for_status()
-    return r.json()
-
+# === POLYGON API CALLS ===
 def get_price(ticker):
+    time.sleep(16)
     url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/prev"
-    data = get_with_throttle(url, {"adjusted": "true", "apiKey": API_KEY})
-    return data.get("results", [{}])[0].get("c")
+    data = requests.get(url, params={"adjusted": "true", "apiKey": API_KEY})
+    data.raise_for_status()
+    return data.json().get("results", [{}])[0].get("c")
 
 def get_ema20(ticker):
+    time.sleep(16)
     url = f"https://api.polygon.io/v1/indicators/ema/{ticker}"
     params = {
         "apiKey": API_KEY,
@@ -77,11 +74,13 @@ def get_ema20(ticker):
         "window": 20,
         "series_type": "close"
     }
-    data = get_with_throttle(url, params)
-    values = data.get("results", {}).get("values", [])
+    data = requests.get(url, params=params)
+    data.raise_for_status()
+    values = data.json().get("results", {}).get("values", [])
     return values[0].get("value") if values else None
 
 def get_rsi14(ticker):
+    time.sleep(16)
     url = f"https://api.polygon.io/v1/indicators/rsi/{ticker}"
     params = {
         "apiKey": API_KEY,
@@ -91,11 +90,13 @@ def get_rsi14(ticker):
         "window": 14,
         "series_type": "close"
     }
-    data = get_with_throttle(url, params)
-    values = data.get("results", {}).get("values", [])
+    data = requests.get(url, params=params)
+    data.raise_for_status()
+    values = data.json().get("results", {}).get("values", [])
     return values[0].get("value") if values else None
 
 def get_macd(ticker):
+    time.sleep(16)
     url = f"https://api.polygon.io/v1/indicators/macd/{ticker}"
     params = {
         "apiKey": API_KEY,
@@ -107,8 +108,9 @@ def get_macd(ticker):
         "signal_window": 9,
         "series_type": "close"
     }
-    data = get_with_throttle(url, params)
-    values = data.get("results", {}).get("values", [])
+    data = requests.get(url, params=params)
+    data.raise_for_status()
+    values = data.json().get("results", {}).get("values", [])
     if values:
         return values[0].get("value"), values[0].get("signal")
     return None, None
@@ -157,7 +159,8 @@ def main():
     rows = []
     for t in tickers:
         print(f"🔍 {t}")
-        rows.append(analyze_ticker(t))
+        row = analyze_ticker(t)
+        rows.append(row)
 
     ws = gc.open(SHEET_NAME).worksheet(SCREENER_TAB)
     ws.clear()
