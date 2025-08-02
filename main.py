@@ -104,6 +104,11 @@ def calculate_indicators(df):
 
     return df
 
+def safe(val):
+    if pd.isna(val):
+        return ""
+    return round(val, 2) if isinstance(val, (float, int)) else val
+
 # === Analyze Tickers ===
 
 def analyze_tickers(gc, client):
@@ -132,12 +137,12 @@ def analyze_tickers(gc, client):
             latest = df.iloc[-1]
             results.append([
                 ticker,
-                round(latest["EMA_20"], 2),
-                round(latest["SMA_50"], 2),
-                round(latest["RSI_14"], 2),
-                round(latest["MACD"], 2),
-                round(latest["Signal"], 2),
-                "Yes" if latest["MACD_Crossover"] else "No",
+                safe(latest.get("EMA_20")),
+                safe(latest.get("SMA_50")),
+                safe(latest.get("RSI_14")),
+                safe(latest.get("MACD")),
+                safe(latest.get("Signal")),
+                "Yes" if latest.get("MACD_Crossover") else "No",
                 latest["timestamp"].isoformat()
             ])
             print(f"✅ {ticker} analyzed.")
