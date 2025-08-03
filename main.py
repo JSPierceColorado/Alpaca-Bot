@@ -3,7 +3,6 @@ import json
 import time
 import re
 import requests
-from bs4 import BeautifulSoup
 import gspread
 from datetime import datetime
 import concurrent.futures
@@ -14,7 +13,8 @@ TICKERS_TAB = "tickers"
 SCREENER_TAB = "screener"
 
 RATE_LIMIT_DELAY = 0.1
-MAX_WORKERS = 20              # As fast as your API key allows
+REDDIT_RATE_LIMIT_DELAY = 1.0  # 1 sec per page to be polite; lower at your own risk!
+MAX_WORKERS = 20
 EXCHANGES = {"XNYS", "XNAS", "ARCX"}
 API_KEY = os.getenv("API_KEY")
 
@@ -24,23 +24,43 @@ def get_google_client():
     return gspread.service_account_from_dict(creds)
 
 # ========== WSB TICKER SCRAPER ==========
-def scrape_wsb_tickers():
+def scrape_wsb_tickers_all():
     """
-    Scrape all tickers from all visible hot posts on r/wallstreetbets.
+    Scrape all tickers from as many r/wallstreetbets posts as Reddit JSON API allows (no limit).
     Returns a sorted, deduped list of possible US stock tickers.
     """
-    headers = {'User-Agent': 'Mozilla/5.0 (compatible; WSB-Ticker-Screener/1.0)'}
-    url = "https://www.reddit.com/r/wallstreetbets/hot/"
-    resp = requests.get(url, headers=headers)
-    resp.raise_for_status()
-
-    soup = BeautifulSoup(resp.text, 'html.parser')
-    posts = soup.find_all("div", attrs={"data-testid": "post-container"})
+    headers = {'User-Agent': 'Mozilla/5.0 (compatible; WSB-Ticker-Screener/2.0)'}
+    url = "https://www.reddit.com/r/wallstreetbets/hot.json"
+    params = {"limit": 100}
+    after = None
     text_blocks = []
-    for post in posts:
-        h3 = post.find("h3")
-        if h3:
-            text_blocks.append(h3.text)
+    total_posts = 0
+
+    while True:
+        if after:
+            params["after"] = after
+        resp = requests.get(url, headers=headers, params=params)
+        if resp.status_code == 429:
+            print("⚠️ Reddit rate-limited us! Sleeping for 5 seconds.")
+            time.sleep(5)
+            continue
+        resp.raise_for_status()
+        data = resp.json()
+        posts = data["data"]["children"]
+        if not posts:
+            break
+        for post in posts:
+            title = post["data"].get("title", "")
+            selftext = post["data"].get("selftext", "")
+            text_blocks.append(title)
+            if selftext:
+                text_blocks.append(selftext)
+        total_posts += len(posts)
+        print(f"Scraped {total_posts} WSB posts so far...")
+        after = data["data"].get("after")
+        if not after:
+            break
+        time.sleep(REDDIT_RATE_LIMIT_DELAY)  # Be nice to Reddit
 
     # Regex for tickers: $AAPL or GME (1–5 uppercase letters)
     ticker_set = set()
@@ -173,8 +193,8 @@ def main():
     print("🚀 Launching WSB screener bot")
     gc = get_google_client()
 
-    # 1. Get all tickers from r/wallstreetbets (no limit)
-    tickers = scrape_wsb_tickers()
+    # 1. Get all tickers from r/wallstreetbets (all available posts, no limit)
+    tickers = scrape_wsb_tickers_all()
     if not tickers:
         print("❌ No tickers found from WSB! Exiting.")
         return
