@@ -74,26 +74,6 @@ def update_tickers_sheet(gc, tickers):
     ws.append_rows([[t] for t in tickers])
     return tickers
 
-# ========== POLYGON MARKET CAP SCRAPER ==========
-def get_market_caps(tickers):
-    print("🔎 Fetching market caps for Reddit tickers from Polygon.io...")
-    market_caps = {}
-    for t in tickers:
-        url = f"https://api.polygon.io/v3/reference/tickers/{t.upper()}"
-        params = {"apiKey": API_KEY}
-        try:
-            resp = requests.get(url, params=params)
-            resp.raise_for_status()
-            data = resp.json()
-            cap = data.get("results", {}).get("market_cap")
-            if cap:
-                market_caps[t.upper()] = cap
-        except Exception as e:
-            print(f"⚠️ {t}: {e}")
-        time.sleep(0.05)  # avoid rate limits
-    print(f"✅ Fetched market cap data for {len(market_caps)} tickers out of {len(tickers)}")
-    return market_caps
-
 # ========== POLYGON INDICATOR FETCH FUNCTIONS ==========
 def get_with_rate_limit(url, params=None):
     resp = requests.get(url, params=params)
@@ -234,29 +214,20 @@ def main():
         print("❌ No tickers found! Exiting.")
         return
 
-    # Market cap filter (fundamental screening)
-    market_caps = get_market_caps(all_tickers)
-    filtered_tickers = [t for t in all_tickers if market_caps.get(t) and market_caps[t] >= 1_000_000_000]
-    if not filtered_tickers:
-        print("❌ No tickers with market cap ≥ $1B found! Exiting.")
-        return
+    # No market cap filter! Just use all_tickers
+    update_tickers_sheet(gc, all_tickers)
 
-    # Write tickers to Google Sheet (tickers tab), always clear first
-    update_tickers_sheet(gc, filtered_tickers)
-
-    # Analyze each ticker and collect indicator data (parallelized)
     print("📊 Analyzing tickers for buy signals...")
     rows = []
     failures = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        results = executor.map(analyze_ticker_threaded, filtered_tickers)
+        results = executor.map(analyze_ticker_threaded, all_tickers)
         for row in results:
             if not any_indicator_zero_or_blank(row):
                 rows.append(row)
             else:
                 failures.append(row[0])
 
-    # Clear and update screener tab with fresh indicator data
     ws = gc.open(SHEET_NAME).worksheet(SCREENER_TAB)
     print("🧹 Clearing screener tab of all existing data...")
     ws.clear()
