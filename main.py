@@ -205,7 +205,7 @@ def main():
     print("🚀 Launching Reddit multi-subreddit screener bot")
     gc = get_google_client()
 
-    subreddits = ["wallstreetbets", "ValueInvesting", "investing"]
+    subreddits = ["wallstreetbets", "investing"]
     all_tickers = set()
     for sub in subreddits:
         all_tickers |= scrape_tickers_from_subreddit(sub)
