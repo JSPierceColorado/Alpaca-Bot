@@ -7,6 +7,7 @@ import gspread
 import pandas as pd
 from datetime import datetime
 import concurrent.futures
+import alpaca_trade_api as tradeapi
 
 # ========== CONFIGURATION ==========
 SHEET_NAME = "Trading Log"
@@ -235,6 +236,20 @@ def any_indicator_zero_or_blank(row):
             return True
     return False
 
+# ========== ALPACA ORDER SUBMISSION ==========
+def submit_buy_order(api, symbol, notional):
+    try:
+        api.submit_order(
+            symbol=symbol,
+            notional=notional,
+            side='buy',
+            type='market',
+            time_in_force='day',
+        )
+        print(f"🟢 Buy order submitted: {symbol} for ${notional:.2f}")
+    except Exception as e:
+        print(f"❌ Failed to submit buy order for {symbol}: {e}")
+
 # ========== MAIN ==========
 def main():
     print("🚀 Launching Reddit + S&P 500 screener bot")
@@ -295,6 +310,51 @@ def main():
     print(f"✅ Screener tab updated. Failed tickers: {len(failures)}")
     if failures:
         print("Some tickers failed to fetch all indicator data or had a zero value. See log above for details.")
+
+    # --- Place Alpaca Buy Orders for TOP 5 + Buy Signal ---
+    try:
+        print("🔗 Connecting to Alpaca for order submission...")
+        alpaca_api = tradeapi.REST(
+            os.getenv("APCA_API_KEY_ID"),
+            os.getenv("APCA_API_SECRET_KEY"),
+            os.getenv("APCA_API_BASE_URL", "https://paper-api.alpaca.markets")
+        )
+        account = alpaca_api.get_account()
+        buying_power = float(account.buying_power)
+        print(f"💰 Buying power: ${buying_power:.2f}")
+
+        # Get screener rows
+        ws = gc.open(SHEET_NAME).worksheet(SCREENER_TAB)
+        sheet_data = ws.get_all_values()
+        header = sheet_data[0]
+        rows = sheet_data[1:]
+
+        # Get current positions (for safety: don't rebuy same ticker)
+        try:
+            positions = {p.symbol for p in alpaca_api.list_positions()}
+        except Exception as e:
+            print(f"⚠️ Could not fetch positions: {e}")
+            positions = set()
+
+        for row in rows:
+            row_dict = dict(zip(header, row))
+            symbol = row_dict.get("Ticker")
+            if row_dict.get("TopPick") == "TOP 5" and row_dict.get("Bullish Signal") == "✅":
+                if symbol in positions:
+                    print(f"🟡 Already have position in {symbol}, skipping buy.")
+                    continue
+                try:
+                    order_amount = buying_power * 0.05  # 5% of available buying power
+                    if order_amount < 1.00:
+                        print(f"⚠️ Not enough buying power to submit order for {symbol}")
+                        continue
+                    print(f"🚀 Placing buy order for {symbol}: ${order_amount:.2f}")
+                    submit_buy_order(alpaca_api, symbol, round(order_amount, 2))
+                except Exception as e:
+                    print(f"❌ Error preparing order for {symbol}: {e}")
+
+    except Exception as e:
+        print(f"❌ Alpaca order section failed: {e}")
 
 if __name__ == "__main__":
     try:
