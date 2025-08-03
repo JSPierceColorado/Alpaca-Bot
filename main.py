@@ -4,6 +4,8 @@ import time
 import re
 import requests
 import gspread
+import tempfile
+import shutil
 from datetime import datetime
 import concurrent.futures
 
@@ -103,6 +105,8 @@ def scrape_google_finance_most_active():
     options.headless = True
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
+    user_data_dir = tempfile.mkdtemp()
+    options.add_argument(f'--user-data-dir={user_data_dir}')
     service = get_chromedriver_service()
     driver = webdriver.Chrome(service=service, options=options)
 
@@ -120,6 +124,7 @@ def scrape_google_finance_most_active():
             if ticker not in {"USD", "EUR", "JPY"}:
                 tickers.add(ticker)
     driver.quit()
+    shutil.rmtree(user_data_dir, ignore_errors=True)
     print(f"🔎 Found {len(tickers)} from Google Most Active: {', '.join(sorted(tickers))}")
     return list(tickers)
 
@@ -129,6 +134,8 @@ def scrape_google_finance_trending():
     options.headless = True
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
+    user_data_dir = tempfile.mkdtemp()
+    options.add_argument(f'--user-data-dir={user_data_dir}')
     service = get_chromedriver_service()
     driver = webdriver.Chrome(service=service, options=options)
 
@@ -153,6 +160,7 @@ def scrape_google_finance_trending():
             if ticker not in {"USD", "EUR", "JPY"}:
                 tickers.add(ticker)
     driver.quit()
+    shutil.rmtree(user_data_dir, ignore_errors=True)
     print(f"🔎 Found {len(tickers)} from Google Trending: {', '.join(sorted(tickers))}")
     return list(tickers)
 
