@@ -84,7 +84,7 @@ def scrape_tickers_parallel_market_cap():
         future_to_ticker = {executor.submit(get_market_cap, t): t for t in all_tickers}
         for i, future in enumerate(concurrent.futures.as_completed(future_to_ticker), 1):
             ticker, market_cap = future.result()
-            if market_cap > 750_000_000:
+            if market_cap >= 1_000_000_000:
                 filtered_tickers.append(ticker)
                 print(f"  ✔️ {ticker}: MCAP ${market_cap:,}")
             else:
