@@ -306,12 +306,19 @@ def main():
         "Bullish Signal", "Buy Reason", "Timestamp", "RankScore", "TopPick"
     ]
     rows_to_write = [header] + output_rows
-    ws.update(values=rows_to_write, range_name="A1")
+
+    try:
+        ws.update(values=rows_to_write, range_name="A1")
+    except Exception as e:
+        print(f"❌ Error during screener tab update: {e}")
+        import traceback
+        traceback.print_exc()
+
     print(f"✅ Screener tab updated. Failed tickers: {len(failures)}")
     if failures:
         print("Some tickers failed to fetch all indicator data or had a zero value. See log above for details.")
 
-    print("DEBUG: About to start Alpaca order section...")
+    print("DEBUG: Screener tab updated! About to start Alpaca order section...")
 
     # --- Place Alpaca Buy Orders for TOP 5 + Buy Signal ---
     try:
@@ -367,6 +374,8 @@ def main():
         import traceback
         print(f"❌ Alpaca order section failed: {e}")
         traceback.print_exc()
+
+    print("DEBUG: Reached end of main()")
 
 if __name__ == "__main__":
     try:
