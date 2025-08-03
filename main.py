@@ -332,6 +332,7 @@ def main():
         # Get current positions (for safety: don't rebuy same ticker)
         try:
             positions = {p.symbol for p in alpaca_api.list_positions()}
+            print(f"💼 Current Alpaca positions: {positions}")
         except Exception as e:
             print(f"⚠️ Could not fetch positions: {e}")
             positions = set()
@@ -339,19 +340,26 @@ def main():
         for row in rows:
             row_dict = dict(zip(header, row))
             symbol = row_dict.get("Ticker")
-            if row_dict.get("TopPick") == "TOP 5" and row_dict.get("Bullish Signal") == "✅":
+            top_pick = row_dict.get("TopPick")
+            bullish_signal = row_dict.get("Bullish Signal")
+            print(f"\n---> Checking {symbol}: TopPick={top_pick}, Bullish Signal={bullish_signal}")
+
+            if top_pick == "TOP 5" and bullish_signal == "✅":
+                print(f"📝 {symbol} meets Top 5 & Bullish criteria.")
                 if symbol in positions:
                     print(f"🟡 Already have position in {symbol}, skipping buy.")
                     continue
+                order_amount = buying_power * 0.05
+                if order_amount < 1.00:
+                    print(f"⚠️ Not enough buying power to submit order for {symbol} (need at least $1)")
+                    continue
                 try:
-                    order_amount = buying_power * 0.05  # 5% of available buying power
-                    if order_amount < 1.00:
-                        print(f"⚠️ Not enough buying power to submit order for {symbol}")
-                        continue
                     print(f"🚀 Placing buy order for {symbol}: ${order_amount:.2f}")
                     submit_buy_order(alpaca_api, symbol, round(order_amount, 2))
                 except Exception as e:
                     print(f"❌ Error preparing order for {symbol}: {e}")
+            else:
+                print(f"⛔ {symbol} does NOT meet Top 5 AND Bullish criteria. Skipping.")
 
     except Exception as e:
         print(f"❌ Alpaca order section failed: {e}")
