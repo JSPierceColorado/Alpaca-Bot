@@ -144,7 +144,7 @@ def get_volume_info(ticker):
         return results[0]["v"], None
     return None, None
 
-# ========== TECHNICAL ANALYSIS + STRICT BUY LOGIC ==========
+# ========== TECHNICAL ANALYSIS + BUY LOGIC ==========
 def analyze_ticker(ticker):
     try:
         price = get_price(ticker)
@@ -153,7 +153,6 @@ def analyze_ticker(ticker):
         macd, signal = get_macd(ticker)
         vol, avg_vol = get_volume_info(ticker)
 
-        # Exclude if RSI too extreme or any indicators missing
         if rsi is None or rsi < 15 or rsi > 80:
             return [
                 ticker, price, ema20, rsi, macd, signal, "", "RSI out of range",
@@ -169,80 +168,4 @@ def analyze_ticker(ticker):
             vol is not None and vol > 0 and
             (price > ema20 or rsi < 45)
         ):
-            buy_signals.append("RSI 25-65, MACD crossover, Vol>0, Price>EMA20 or RSI<45")
-
-        buy_reason = "; ".join(buy_signals)
-        is_bullish = "✅" if buy_signals else ""
-
-        return [
-            ticker,
-            round(price, 2) if price else "",
-            round(ema20, 2) if ema20 else "",
-            round(rsi, 2) if rsi else "",
-            round(macd, 4) if macd else "",
-            round(signal, 4) if signal else "",
-            is_bullish,
-            buy_reason if buy_reason else "Not all slightly-looser criteria met",
-            datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-        ]
-    except Exception as e:
-        print(f"⚠️ {ticker} failed: {e}")
-        return [ticker, "", "", "", "", "", "", "", ""]
-
-def analyze_ticker_threaded(ticker):
-    print(f"🔍 {ticker}")
-    return analyze_ticker(ticker)
-
-# ========== FILTER: REMOVE ROWS WITH EXACTLY ZERO OR BLANK INDICATORS ==========
-def any_indicator_zero_or_blank(row):
-    for x in row[1:6]:
-        if x == "" or x == 0 or x == 0.0 or x == "0" or x == "0.0" or x == "0.00":
-            return True
-    return False
-
-# ========== MAIN ==========
-def main():
-    print("🚀 Launching Reddit multi-subreddit screener bot")
-    gc = get_google_client()
-
-    subreddits = ["wallstreetbets", "investing"]
-    all_tickers = set()
-    for sub in subreddits:
-        all_tickers |= scrape_tickers_from_subreddit(sub)
-    all_tickers = sorted(all_tickers)
-
-    if not all_tickers:
-        print("❌ No tickers found! Exiting.")
-        return
-
-    # No market cap filter! Just use all_tickers
-    update_tickers_sheet(gc, all_tickers)
-
-    print("📊 Analyzing tickers for buy signals...")
-    rows = []
-    failures = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        results = executor.map(analyze_ticker_threaded, all_tickers)
-        for row in results:
-            if not any_indicator_zero_or_blank(row):
-                rows.append(row)
-            else:
-                failures.append(row[0])
-
-    ws = gc.open(SHEET_NAME).worksheet(SCREENER_TAB)
-    print("🧹 Clearing screener tab of all existing data...")
-    ws.clear()
-    ws.append_row([
-        "Ticker", "Price", "EMA_20", "RSI_14", "MACD", "Signal", 
-        "Bullish Signal", "Buy Reason", "Timestamp"
-    ])
-    ws.append_rows(rows)
-    print(f"✅ Screener tab updated. Failed tickers: {len(failures)}")
-    if failures:
-        print("Some tickers failed to fetch all indicator data or had a zero value. See log above for details.")
-
-if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        print("❌ Fatal error:", e)
+            buy_signals.append("RSI 25-65, MACD crossover, Vol>0, P_
