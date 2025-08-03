@@ -4,7 +4,7 @@ import time
 import re
 import requests
 import gspread
-from datetime import datetime, date
+from datetime import datetime
 import concurrent.futures
 
 # ========== CONFIGURATION ==========
@@ -144,16 +144,6 @@ def get_volume_info(ticker):
         return results[0]["v"], None
     return None, None
 
-def get_all_time_high(ticker):
-    today = date.today().strftime("%Y-%m-%d")
-    url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/1900-01-01/{today}"
-    params = {"adjusted": "true", "limit": 50000, "apiKey": API_KEY}
-    resp = get_with_rate_limit(url, params=params)
-    results = resp.json().get("results", [])
-    if not results:
-        return None
-    return max(r.get("h", 0) for r in results)
-
 # ========== TECHNICAL ANALYSIS + STRICT BUY LOGIC ==========
 def analyze_ticker(ticker):
     try:
@@ -162,19 +152,11 @@ def analyze_ticker(ticker):
         rsi = get_rsi14(ticker)
         macd, signal = get_macd(ticker)
         vol, avg_vol = get_volume_info(ticker)
-        ath = get_all_time_high(ticker)
 
         # --- Exclude if RSI too extreme ---
         if rsi is None or rsi < 20 or rsi > 70:
             return [
                 ticker, price, ema20, rsi, macd, signal, "", "RSI out of range",
-                datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-            ]
-
-        # --- Exclude if current price < 25% of all time high ---
-        if price is None or ath is None or ath == 0 or price < 0.25 * ath:
-            return [
-                ticker, price, ema20, rsi, macd, signal, "", "Price < 25% of ATH",
                 datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
             ]
 
@@ -186,7 +168,7 @@ def analyze_ticker(ticker):
             signal is not None and macd > signal and
             vol is not None and avg_vol is not None and vol > avg_vol
         ):
-            buy_signals.append("RSI 30-45, MACD>0/crossover, Vol>Avg, Price>=25% ATH")
+            buy_signals.append("RSI 30-45, MACD>0/crossover, Vol>Avg")
 
         buy_reason = "; ".join(buy_signals)
         is_bullish = "✅" if buy_signals else ""
