@@ -140,38 +140,31 @@ def analyze_ticker(ticker):
         ema20 = get_ema20(ticker)
         rsi = get_rsi14(ticker)
         macd, signal = get_macd(ticker)
-        
-        buy_signals = []
 
-        # Rule 1: Oversold bounce
-        if (rsi is not None and rsi < 35 and
-            macd is not None and signal is not None and macd > signal and
-            price is not None and ema20 is not None and price > ema20):
-            buy_signals.append("Oversold + MACD + Price>EMA20")
+        # 1. Basic filters
+        if (
+            price is None or price <= 5 or
+            ema20 is None or ema20 == 0 or
+            rsi is None or not (30 <= rsi <= 45) or
+            macd is None or signal is None or
+            macd <= 0 or macd <= signal
+        ):
+            return [
+                ticker, price, ema20, rsi, macd, signal, "", "", datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+            ]
 
-        # Rule 2: Uptrend momentum
-        if (price is not None and ema20 is not None and price > ema20 and
-            macd is not None and signal is not None and macd > signal and
-            rsi is not None and 35 <= rsi <= 65):
-            buy_signals.append("Uptrend Momentum")
-
-        # Rule 3: Very oversold only
-        if rsi is not None and rsi < 25:
-            buy_signals.append("Very Oversold")
-
-        buy_reason = "; ".join(buy_signals)
-        is_bullish = "✅" if buy_signals else ""
-
+        # If all above are true, bullish
+        buy_reason = "RSI 30-45, MACD>0 and crossover, Price>5"
         return [
             ticker,
-            round(price, 2) if price else "",
-            round(ema20, 2) if ema20 else "",
-            round(rsi, 2) if rsi else "",
-            round(macd, 4) if macd else "",
-            round(signal, 4) if signal else "",
-            is_bullish,
+            round(price, 2),
+            round(ema20, 2),
+            round(rsi, 2),
+            round(macd, 4),
+            round(signal, 4),
+            "✅",
             buy_reason,
-            datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+            datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
         ]
     except Exception as e:
         print(f"⚠️ {ticker} failed: {e}")
