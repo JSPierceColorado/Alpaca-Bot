@@ -153,8 +153,8 @@ def analyze_ticker(ticker):
         macd, signal = get_macd(ticker)
         vol, avg_vol = get_volume_info(ticker)
 
-        # Exclude if RSI too extreme or indicators missing
-        if rsi is None or rsi < 15 or rsi > 80:
+        # Exclude extreme RSI
+        if rsi is None or rsi < 10 or rsi > 85:
             return [
                 ticker, price, ema20, rsi, macd, signal, "", "RSI out of range",
                 datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -162,14 +162,11 @@ def analyze_ticker(ticker):
 
         buy_signals = []
         if (
-            ema20 is not None and ema20 > 0 and
-            price is not None and
-            rsi is not None and 25 < rsi < 65 and
+            rsi is not None and 20 < rsi < 70 and
             macd is not None and signal is not None and macd > signal and
-            vol is not None and avg_vol is not None and vol > avg_vol and
-            (price > ema20 or rsi < 40)
+            vol is not None and vol > 0
         ):
-            buy_signals.append("RSI 25-65, MACD crossover, Vol>Avg, Price>EMA20 or RSI<40")
+            buy_signals.append("RSI 20-70, MACD crossover, Vol>0")
 
         buy_reason = "; ".join(buy_signals)
         is_bullish = "✅" if buy_signals else ""
