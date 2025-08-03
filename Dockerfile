@@ -1,22 +1,25 @@
 FROM python:3.12-slim
 
-# Install system dependencies (none needed for this version, but keep minimal for Google Sheets + networking)
-RUN apt-get update && apt-get install -y \
-    gcc \
-    libpq-dev \
-    --no-install-recommends && \
-    rm -rf /var/lib/apt/lists/*
-
-# Set Python environment variables for best practice
+# Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Install Python dependencies
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    libpq-dev \
+    build-essential \
+    python3-dev \
+    libxml2-dev \
+    libxslt1-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install pip packages
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy project files
 COPY . .
 
-# Default command
+# Run main script
 CMD ["python", "main.py"]
