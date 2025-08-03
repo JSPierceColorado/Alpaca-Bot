@@ -76,36 +76,22 @@ def update_tickers_sheet(gc, tickers):
 
 # ========== POLYGON MARKET CAP SCRAPER ==========
 def get_market_caps(tickers):
-    print("🔎 Fetching market caps from Polygon.io...")
-    url = "https://api.polygon.io/v3/reference/tickers"
-    params = {
-        "market": "stocks",
-        "active": "true",
-        "limit": 1000,
-        "apiKey": API_KEY
-    }
+    print("🔎 Fetching market caps for Reddit tickers from Polygon.io...")
     market_caps = {}
-    processed = 0
-    next_url = url
-
-    while next_url and processed < 10000:  # Avoid infinite loops
-        if next_url == url:
-            resp = requests.get(next_url, params=params)
-        else:
-            resp = requests.get(next_url)
-        resp.raise_for_status()
-        data = resp.json()
-        for item in data.get("results", []):
-            t = item.get("ticker")
-            cap = item.get("market_cap")
-            if t and cap:
-                market_caps[t] = cap
-        processed += len(data.get("results", []))
-        next_url = data.get("next_url")
-        if next_url and "apiKey=" not in next_url:
-            sep = "&" if "?" in next_url else "?"
-            next_url = f"{next_url}{sep}apiKey={API_KEY}"
-    print(f"✅ Fetched market cap data for {len(market_caps)} stocks.")
+    for t in tickers:
+        url = f"https://api.polygon.io/v3/reference/tickers/{t.upper()}"
+        params = {"apiKey": API_KEY}
+        try:
+            resp = requests.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            cap = data.get("results", {}).get("market_cap")
+            if cap:
+                market_caps[t.upper()] = cap
+        except Exception as e:
+            print(f"⚠️ {t}: {e}")
+        time.sleep(0.05)  # avoid rate limits
+    print(f"✅ Fetched market cap data for {len(market_caps)} tickers out of {len(tickers)}")
     return market_caps
 
 # ========== POLYGON INDICATOR FETCH FUNCTIONS ==========
