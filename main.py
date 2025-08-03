@@ -27,9 +27,7 @@ EXCHANGES = {"XNYS", "XNAS", "ARCX"}
 
 # ========== BULLETPROOF CHROMEDRIVER FINDER + CHMOD FIX ==========
 def get_chromedriver_service():
-    # Ensure chromedriver is installed by webdriver-manager
     ChromeDriverManager().install()
-    # Always search the full .wdm cache for a real Linux ELF chromedriver binary
     root_dir = "/root/.wdm/drivers/chromedriver/"
     for root, dirs, files in os.walk(root_dir):
         for fname in files:
@@ -39,7 +37,6 @@ def get_chromedriver_service():
                     with open(path, "rb") as f:
                         header = f.read(4)
                     if header == b'\x7fELF':
-                        # Ensure permissions are correct (executable)
                         os.chmod(path, 0o755)
                         print(f"✅ Using ChromeDriver binary: {path}")
                         return Service(path)
@@ -98,35 +95,38 @@ def scrape_wsb_tickers_all():
     print(f"🦍 Found {len(tickers)} tickers from r/wallstreetbets: {', '.join(tickers)}")
     return tickers
 
-# ========== GOOGLE FINANCE SCRAPERS ==========
+# ========== GOOGLE FINANCE SCRAPERS WITH ROBUST TEMP USER PROFILE ==========
 def scrape_google_finance_most_active():
     print("🌐 Scraping Google Finance Most Active...")
     options = Options()
     options.headless = True
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    user_data_dir = tempfile.mkdtemp()
+    options.add_argument('--single-process')
+    user_data_dir = tempfile.mkdtemp(prefix="chrome_", dir="/tmp")
     options.add_argument(f'--user-data-dir={user_data_dir}')
     service = get_chromedriver_service()
-    driver = webdriver.Chrome(service=service, options=options)
-
-    url = "https://www.google.com/finance/markets/most-active"
-    driver.get(url)
-    time.sleep(2)  # Let JS load
-
-    anchors = driver.find_elements("css selector", "a[href*='/quote/']")
-    tickers = set()
-    for a in anchors:
-        href = a.get_attribute("href")
-        match = re.search(r"/quote/([A-Z.]+):[A-Z]+", href)
-        if match:
-            ticker = match.group(1)
-            if ticker not in {"USD", "EUR", "JPY"}:
-                tickers.add(ticker)
-    driver.quit()
-    shutil.rmtree(user_data_dir, ignore_errors=True)
-    print(f"🔎 Found {len(tickers)} from Google Most Active: {', '.join(sorted(tickers))}")
-    return list(tickers)
+    driver = None
+    try:
+        driver = webdriver.Chrome(service=service, options=options)
+        url = "https://www.google.com/finance/markets/most-active"
+        driver.get(url)
+        time.sleep(2)
+        anchors = driver.find_elements("css selector", "a[href*='/quote/']")
+        tickers = set()
+        for a in anchors:
+            href = a.get_attribute("href")
+            match = re.search(r"/quote/([A-Z.]+):[A-Z]+", href)
+            if match:
+                ticker = match.group(1)
+                if ticker not in {"USD", "EUR", "JPY"}:
+                    tickers.add(ticker)
+        print(f"🔎 Found {len(tickers)} from Google Most Active: {', '.join(sorted(tickers))}")
+        return list(tickers)
+    finally:
+        if driver:
+            driver.quit()
+        shutil.rmtree(user_data_dir, ignore_errors=True)
 
 def scrape_google_finance_trending():
     print("🌐 Scraping Google Finance Trending...")
@@ -134,35 +134,37 @@ def scrape_google_finance_trending():
     options.headless = True
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    user_data_dir = tempfile.mkdtemp()
+    options.add_argument('--single-process')
+    user_data_dir = tempfile.mkdtemp(prefix="chrome_", dir="/tmp")
     options.add_argument(f'--user-data-dir={user_data_dir}')
     service = get_chromedriver_service()
-    driver = webdriver.Chrome(service=service, options=options)
-
-    url = "https://www.google.com/finance/"
-    driver.get(url)
-    time.sleep(2.5)
-
+    driver = None
     try:
-        trending_tab = driver.find_element("xpath", "//button[contains(., 'Trending')]")
-        trending_tab.click()
-        time.sleep(1.5)
-    except Exception as e:
-        print("Trending tab may already be open or not found:", e)
-
-    anchors = driver.find_elements("css selector", "a[href*='/quote/']")
-    tickers = set()
-    for a in anchors:
-        href = a.get_attribute("href")
-        match = re.search(r"/quote/([A-Z.]+):[A-Z]+", href)
-        if match:
-            ticker = match.group(1)
-            if ticker not in {"USD", "EUR", "JPY"}:
-                tickers.add(ticker)
-    driver.quit()
-    shutil.rmtree(user_data_dir, ignore_errors=True)
-    print(f"🔎 Found {len(tickers)} from Google Trending: {', '.join(sorted(tickers))}")
-    return list(tickers)
+        driver = webdriver.Chrome(service=service, options=options)
+        url = "https://www.google.com/finance/"
+        driver.get(url)
+        time.sleep(2.5)
+        try:
+            trending_tab = driver.find_element("xpath", "//button[contains(., 'Trending')]")
+            trending_tab.click()
+            time.sleep(1.5)
+        except Exception as e:
+            print("Trending tab may already be open or not found:", e)
+        anchors = driver.find_elements("css selector", "a[href*='/quote/']")
+        tickers = set()
+        for a in anchors:
+            href = a.get_attribute("href")
+            match = re.search(r"/quote/([A-Z.]+):[A-Z]+", href)
+            if match:
+                ticker = match.group(1)
+                if ticker not in {"USD", "EUR", "JPY"}:
+                    tickers.add(ticker)
+        print(f"🔎 Found {len(tickers)} from Google Trending: {', '.join(sorted(tickers))}")
+        return list(tickers)
+    finally:
+        if driver:
+            driver.quit()
+        shutil.rmtree(user_data_dir, ignore_errors=True)
 
 # ========== GOOGLE SHEET HELPERS ==========
 def update_tickers_sheet(gc, tickers):
