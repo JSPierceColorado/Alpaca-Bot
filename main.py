@@ -23,35 +23,25 @@ MAX_WORKERS = 20
 API_KEY = os.getenv("API_KEY")
 EXCHANGES = {"XNYS", "XNAS", "ARCX"}
 
-# ========== BULLETPROOF CHROMEDRIVER FINDER ==========
+# ========== ULTIMATE CHROMEDRIVER FINDER ==========
 def get_chromedriver_service():
-    driver_path = ChromeDriverManager().install()
-    chromedriver_binary = None
-
-    # If it's a directory, recursively look for the real 'chromedriver' ELF binary (not notices, not .txt, not .exe)
-    if os.path.isdir(driver_path):
-        for root, dirs, files in os.walk(driver_path):
-            for fname in files:
-                path = os.path.join(root, fname)
-                if fname == 'chromedriver':
-                    try:
-                        with open(path, "rb") as f:
-                            header = f.read(4)
-                        if header == b'\x7fELF':  # ELF header for Linux binaries
-                            chromedriver_binary = path
-                            break
-                    except Exception:
-                        continue
-        if not chromedriver_binary:
-            raise RuntimeError(f"Could not find executable chromedriver ELF binary in {driver_path}")
-        return Service(chromedriver_binary)
-    # If it's already a file, make sure it's an ELF binary
-    else:
-        with open(driver_path, "rb") as f:
-            header = f.read(4)
-        if header != b'\x7fELF':
-            raise RuntimeError(f"{driver_path} is not an ELF binary, something is wrong!")
-        return Service(driver_path)
+    # Ensure chromedriver is installed by webdriver-manager
+    ChromeDriverManager().install()
+    # Always search the full .wdm cache for a real Linux ELF chromedriver binary
+    root_dir = "/root/.wdm/drivers/chromedriver/"
+    for root, dirs, files in os.walk(root_dir):
+        for fname in files:
+            path = os.path.join(root, fname)
+            if fname == 'chromedriver':
+                try:
+                    with open(path, "rb") as f:
+                        header = f.read(4)
+                    if header == b'\x7fELF':
+                        print(f"✅ Using ChromeDriver binary: {path}")
+                        return Service(path)
+                except Exception:
+                    continue
+    raise RuntimeError("Could not find a usable chromedriver ELF binary!")
 
 # ========== GOOGLE SHEETS AUTH ==========
 def get_google_client():
