@@ -23,15 +23,17 @@ MAX_WORKERS = 20
 API_KEY = os.getenv("API_KEY")
 EXCHANGES = {"XNYS", "XNAS", "ARCX"}
 
-# ========== PATCH FOR webdriver-manager 4.x ==========
+# ========== CHROMEDRIVER: RECURSIVE PATCH ==========
 def get_chromedriver_service():
     driver_path = ChromeDriverManager().install()
-    # If webdriver-manager returns a directory, look for executable inside
+    # If a directory, search recursively for the 'chromedriver' executable
     if os.path.isdir(driver_path):
-        for fname in os.listdir(driver_path):
-            if fname.startswith('chromedriver') and os.access(os.path.join(driver_path, fname), os.X_OK):
-                driver_path = os.path.join(driver_path, fname)
-                break
+        for root, dirs, files in os.walk(driver_path):
+            for fname in files:
+                if fname == 'chromedriver' and os.access(os.path.join(root, fname), os.X_OK):
+                    return Service(os.path.join(root, fname))
+        raise RuntimeError(f"Could not find executable chromedriver in {driver_path}")
+    # If already a file, just return
     return Service(driver_path)
 
 # ========== GOOGLE SHEETS AUTH ==========
