@@ -7,16 +7,20 @@ import gspread
 from datetime import datetime
 import concurrent.futures
 
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager
+
 # ========== CONFIGURATION ==========
 SHEET_NAME = "Trading Log"
 TICKERS_TAB = "tickers"
 SCREENER_TAB = "screener"
 
 RATE_LIMIT_DELAY = 0.1
-REDDIT_RATE_LIMIT_DELAY = 1.0  # 1 sec per page to be polite; lower at your own risk!
+REDDIT_RATE_LIMIT_DELAY = 1.0
 MAX_WORKERS = 20
-EXCHANGES = {"XNYS", "XNAS", "ARCX"}
 API_KEY = os.getenv("API_KEY")
+EXCHANGES = {"XNYS", "XNAS", "ARCX"}
 
 # ========== GOOGLE SHEETS AUTH ==========
 def get_google_client():
@@ -26,7 +30,7 @@ def get_google_client():
 # ========== WSB TICKER SCRAPER ==========
 def scrape_wsb_tickers_all():
     """
-    Scrape all tickers from as many r/wallstreetbets posts as Reddit JSON API allows (no limit).
+    Scrape all tickers from as many r/wallstreetbets posts as Reddit JSON API allows.
     Returns a sorted, deduped list of possible US stock tickers.
     """
     headers = {'User-Agent': 'Mozilla/5.0 (compatible; WSB-Ticker-Screener/2.0)'}
@@ -72,6 +76,71 @@ def scrape_wsb_tickers_all():
     tickers = sorted(ticker_set)
     print(f"🦍 Found {len(tickers)} tickers from r/wallstreetbets: {', '.join(tickers)}")
     return tickers
+
+# ========== GOOGLE FINANCE SCRAPERS ==========
+def scrape_google_finance_most_active():
+    """
+    Scrape tickers from Google Finance's Most Active stocks page.
+    """
+    print("🌐 Scraping Google Finance Most Active...")
+    options = Options()
+    options.headless = True
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    driver = webdriver.Chrome(ChromeDriverManager().install(), options=options)
+
+    url = "https://www.google.com/finance/markets/most-active"
+    driver.get(url)
+    time.sleep(2)  # Let JS load
+
+    anchors = driver.find_elements("css selector", "a[href*='/quote/']")
+    tickers = set()
+    for a in anchors:
+        href = a.get_attribute("href")
+        match = re.search(r"/quote/([A-Z.]+):[A-Z]+", href)
+        if match:
+            ticker = match.group(1)
+            if ticker not in {"USD", "EUR", "JPY"}:
+                tickers.add(ticker)
+    driver.quit()
+    print(f"🔎 Found {len(tickers)} from Google Most Active: {', '.join(sorted(tickers))}")
+    return list(tickers)
+
+def scrape_google_finance_trending():
+    """
+    Scrape tickers from Google Finance's Trending tab on the main page.
+    """
+    print("🌐 Scraping Google Finance Trending...")
+    options = Options()
+    options.headless = True
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    driver = webdriver.Chrome(ChromeDriverManager().install(), options=options)
+
+    url = "https://www.google.com/finance/"
+    driver.get(url)
+    time.sleep(2.5)  # Let JS load
+
+    # Click the Trending tab if not selected (try/catch so it doesn't error if it's already open)
+    try:
+        trending_tab = driver.find_element("xpath", "//button[contains(., 'Trending')]")
+        trending_tab.click()
+        time.sleep(1.5)
+    except Exception as e:
+        print("Trending tab may already be open or not found:", e)
+
+    anchors = driver.find_elements("css selector", "a[href*='/quote/']")
+    tickers = set()
+    for a in anchors:
+        href = a.get_attribute("href")
+        match = re.search(r"/quote/([A-Z.]+):[A-Z]+", href)
+        if match:
+            ticker = match.group(1)
+            if ticker not in {"USD", "EUR", "JPY"}:
+                tickers.add(ticker)
+    driver.quit()
+    print(f"🔎 Found {len(tickers)} from Google Trending: {', '.join(sorted(tickers))}")
+    return list(tickers)
 
 # ========== GOOGLE SHEET HELPERS ==========
 def update_tickers_sheet(gc, tickers):
@@ -190,31 +259,42 @@ def analyze_ticker_threaded(ticker):
 
 # ========== MAIN ==========
 def main():
-    print("🚀 Launching WSB screener bot")
+    print("🚀 Launching WSB + Google Finance screener bot")
     gc = get_google_client()
 
-    # 1. Get all tickers from r/wallstreetbets (all available posts, no limit)
-    tickers = scrape_wsb_tickers_all()
-    if not tickers:
-        print("❌ No tickers found from WSB! Exiting.")
+    # 1. Get tickers from WSB
+    wsb_tickers = scrape_wsb_tickers_all()
+
+    # 2. Get Google Finance Most Active
+    google_active = scrape_google_finance_most_active()
+
+    # 3. Get Google Finance Trending
+    google_trending = scrape_google_finance_trending()
+
+    # 4. Combine and deduplicate
+    all_tickers = sorted(set(wsb_tickers + google_active + google_trending))
+    print(f"✅ Total combined tickers: {len(all_tickers)}")
+
+    if not all_tickers:
+        print("❌ No tickers found! Exiting.")
         return
 
-    # 2. Write tickers to Google Sheet (tickers tab)
-    update_tickers_sheet(gc, tickers)
+    # 5. Write tickers to Google Sheet (tickers tab)
+    update_tickers_sheet(gc, all_tickers)
 
-    # 3. Analyze each ticker and collect indicator data (parallelized)
+    # 6. Analyze each ticker and collect indicator data (parallelized)
     print("📊 Analyzing tickers for buy signals...")
     rows = []
     failures = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        results = executor.map(analyze_ticker_threaded, tickers)
+        results = executor.map(analyze_ticker_threaded, all_tickers)
         for row in results:
             if all(str(x) != "" for x in row[1:6]):
                 rows.append(row)
             else:
                 failures.append(row[0])
 
-    # 4. Clear and update screener tab with fresh indicator data
+    # 7. Clear and update screener tab with fresh indicator data
     ws = gc.open(SHEET_NAME).worksheet(SCREENER_TAB)
     print("🧹 Clearing screener tab of all existing data...")
     ws.clear()
