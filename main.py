@@ -23,6 +23,17 @@ MAX_WORKERS = 20
 API_KEY = os.getenv("API_KEY")
 EXCHANGES = {"XNYS", "XNAS", "ARCX"}
 
+# ========== GET CHROMEDRIVER SERVICE (BULLETPROOF) ==========
+def get_chromedriver_service():
+    driver_path = ChromeDriverManager().install()
+    # Some webdriver-manager versions return a directory, not the actual binary!
+    if os.path.isdir(driver_path):
+        for fname in os.listdir(driver_path):
+            if fname.startswith('chromedriver') and os.access(os.path.join(driver_path, fname), os.X_OK):
+                driver_path = os.path.join(driver_path, fname)
+                break
+    return Service(driver_path)
+
 # ========== GOOGLE SHEETS AUTH ==========
 def get_google_client():
     creds = json.loads(os.getenv("GOOGLE_CREDS_JSON"))
@@ -61,7 +72,7 @@ def scrape_wsb_tickers_all():
         after = data["data"].get("after")
         if not after:
             break
-        time.sleep(REDDIT_RATE_LIMIT_DELAY)  # Be nice to Reddit
+        time.sleep(REDDIT_RATE_LIMIT_DELAY)
 
     # Regex for tickers: $AAPL or GME (1–5 uppercase letters)
     ticker_set = set()
@@ -81,8 +92,7 @@ def scrape_google_finance_most_active():
     options.headless = True
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    chromedriver_path = ChromeDriverManager().install()
-    service = Service(executable_path=chromedriver_path)
+    service = get_chromedriver_service()
     driver = webdriver.Chrome(service=service, options=options)
 
     url = "https://www.google.com/finance/markets/most-active"
@@ -108,15 +118,13 @@ def scrape_google_finance_trending():
     options.headless = True
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    chromedriver_path = ChromeDriverManager().install()
-    service = Service(executable_path=chromedriver_path)
+    service = get_chromedriver_service()
     driver = webdriver.Chrome(service=service, options=options)
 
     url = "https://www.google.com/finance/"
     driver.get(url)
-    time.sleep(2.5)  # Let JS load
+    time.sleep(2.5)
 
-    # Click the Trending tab if not selected (try/catch so it doesn't error if it's already open)
     try:
         trending_tab = driver.find_element("xpath", "//button[contains(., 'Trending')]")
         trending_tab.click()
