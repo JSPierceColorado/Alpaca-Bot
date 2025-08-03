@@ -134,11 +134,30 @@ def analyze_ticker(ticker):
         ema20 = get_ema20(ticker)
         rsi = get_rsi14(ticker)
         macd, signal = get_macd(ticker)
-        is_bullish = (
-            rsi is not None and rsi < 35 and
+        
+        buy_signals = []
+
+        # Rule 1: Oversold + upturn
+        if (rsi is not None and rsi < 35 and
             macd is not None and signal is not None and macd > signal and
-            price is not None and ema20 is not None and price > ema20
-        )
+            price is not None and ema20 is not None and price > ema20):
+            buy_signals.append("Oversold + MACD + Price>EMA20")
+
+        # Rule 2: Simple uptrend momentum
+        if (price is not None and ema20 is not None and price > ema20 and
+            macd is not None and signal is not None and macd > signal and
+            rsi is not None and 35 <= rsi <= 65):
+            buy_signals.append("Uptrend Momentum")
+
+        # Rule 3: Very oversold only (for catching dips)
+        if rsi is not None and rsi < 25:
+            buy_signals.append("Very Oversold")
+
+        # Add more rules here as needed!
+
+        buy_reason = "; ".join(buy_signals)
+        is_bullish = "✅" if buy_signals else ""
+
         return [
             ticker,
             round(price, 2) if price else "",
@@ -146,12 +165,13 @@ def analyze_ticker(ticker):
             round(rsi, 2) if rsi else "",
             round(macd, 4) if macd else "",
             round(signal, 4) if signal else "",
-            "✅" if is_bullish else "",
+            is_bullish,
+            buy_reason,
             datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
         ]
     except Exception as e:
         print(f"⚠️ {ticker} failed: {e}")
-        return [ticker, "", "", "", "", "", "", ""]
+        return [ticker, "", "", "", "", "", "", "", ""]
 
 def analyze_ticker_threaded(ticker):
     print(f"🔍 {ticker}")
