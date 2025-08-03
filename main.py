@@ -181,6 +181,15 @@ def analyze_ticker_threaded(ticker):
     print(f"🔍 {ticker}")
     return analyze_ticker(ticker)
 
+# ========== FILTER: REMOVE ROWS WITH EXACTLY ZERO OR BLANK INDICATORS ==========
+def any_indicator_zero_or_blank(row):
+    # row[1:6] are: Price, EMA_20, RSI_14, MACD, Signal
+    for x in row[1:6]:
+        # Accept both string and numeric zero
+        if x == "" or x == 0 or x == 0.0 or x == "0" or x == "0.0" or x == "0.00":
+            return True
+    return False
+
 # ========== MAIN ==========
 def main():
     print("🚀 Launching Reddit multi-subreddit screener bot")
@@ -206,7 +215,7 @@ def main():
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         results = executor.map(analyze_ticker_threaded, all_tickers)
         for row in results:
-            if all(str(x) != "" for x in row[1:6]):
+            if not any_indicator_zero_or_blank(row):
                 rows.append(row)
             else:
                 failures.append(row[0])
@@ -222,7 +231,7 @@ def main():
     ws.append_rows(rows)
     print(f"✅ Screener tab updated. Failed tickers: {len(failures)}")
     if failures:
-        print("Some tickers failed to fetch all indicator data. See log above for details.")
+        print("Some tickers failed to fetch all indicator data or had a zero value. See log above for details.")
 
 if __name__ == "__main__":
     try:
