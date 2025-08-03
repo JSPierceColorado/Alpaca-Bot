@@ -4,7 +4,7 @@ import time
 import re
 import requests
 import gspread
-from datetime import datetime
+from datetime import datetime, date
 import concurrent.futures
 
 # ========== CONFIGURATION ==========
@@ -133,38 +133,74 @@ def get_macd(ticker):
         return values[0].get("value"), values[0].get("signal")
     return None, None
 
-# ========== TECHNICAL ANALYSIS + BUY LOGIC ==========
+def get_volume_info(ticker):
+    url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/prev"
+    params = {"adjusted": "true", "apiKey": API_KEY}
+    resp = get_with_rate_limit(url, params=params)
+    results = resp.json().get("results", [])
+    if results and "v" in results[0] and "av" in results[0]:
+        return results[0]["v"], results[0]["av"]
+    elif results and "v" in results[0]:
+        return results[0]["v"], None
+    return None, None
+
+def get_all_time_high(ticker):
+    today = date.today().strftime("%Y-%m-%d")
+    url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/1900-01-01/{today}"
+    params = {"adjusted": "true", "limit": 50000, "apiKey": API_KEY}
+    resp = get_with_rate_limit(url, params=params)
+    results = resp.json().get("results", [])
+    if not results:
+        return None
+    return max(r.get("h", 0) for r in results)
+
+# ========== TECHNICAL ANALYSIS + STRICT BUY LOGIC ==========
 def analyze_ticker(ticker):
     try:
         price = get_price(ticker)
         ema20 = get_ema20(ticker)
         rsi = get_rsi14(ticker)
         macd, signal = get_macd(ticker)
+        vol, avg_vol = get_volume_info(ticker)
+        ath = get_all_time_high(ticker)
 
-        # 1. Basic filters
-        if (
-            price is None or price <= 5 or
-            ema20 is None or ema20 == 0 or
-            rsi is None or not (30 <= rsi <= 45) or
-            macd is None or signal is None or
-            macd <= 0 or macd <= signal
-        ):
+        # --- Exclude if RSI too extreme ---
+        if rsi is None or rsi < 20 or rsi > 70:
             return [
-                ticker, price, ema20, rsi, macd, signal, "", "", datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+                ticker, price, ema20, rsi, macd, signal, "", "RSI out of range",
+                datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
             ]
 
-        # If all above are true, bullish
-        buy_reason = "RSI 30-45, MACD>0 and crossover, Price>5"
+        # --- Exclude if current price < 25% of all time high ---
+        if price is None or ath is None or ath == 0 or price < 0.25 * ath:
+            return [
+                ticker, price, ema20, rsi, macd, signal, "", "Price < 25% of ATH",
+                datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+            ]
+
+        buy_signals = []
+        if (
+            ema20 is not None and ema20 > 0 and
+            rsi is not None and 30 <= rsi <= 45 and
+            macd is not None and macd > 0 and
+            signal is not None and macd > signal and
+            vol is not None and avg_vol is not None and vol > avg_vol
+        ):
+            buy_signals.append("RSI 30-45, MACD>0/crossover, Vol>Avg, Price>=25% ATH")
+
+        buy_reason = "; ".join(buy_signals)
+        is_bullish = "✅" if buy_signals else ""
+
         return [
             ticker,
-            round(price, 2),
-            round(ema20, 2),
-            round(rsi, 2),
-            round(macd, 4),
-            round(signal, 4),
-            "✅",
-            buy_reason,
-            datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            round(price, 2) if price else "",
+            round(ema20, 2) if ema20 else "",
+            round(rsi, 2) if rsi else "",
+            round(macd, 4) if macd else "",
+            round(signal, 4) if signal else "",
+            is_bullish,
+            buy_reason if buy_reason else "Not all strict criteria met",
+            datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
         ]
     except Exception as e:
         print(f"⚠️ {ticker} failed: {e}")
@@ -176,9 +212,7 @@ def analyze_ticker_threaded(ticker):
 
 # ========== FILTER: REMOVE ROWS WITH EXACTLY ZERO OR BLANK INDICATORS ==========
 def any_indicator_zero_or_blank(row):
-    # row[1:6] are: Price, EMA_20, RSI_14, MACD, Signal
     for x in row[1:6]:
-        # Accept both string and numeric zero
         if x == "" or x == 0 or x == 0.0 or x == "0" or x == "0.0" or x == "0.00":
             return True
     return False
