@@ -23,7 +23,7 @@ MAX_WORKERS = 20
 API_KEY = os.getenv("API_KEY")
 EXCHANGES = {"XNYS", "XNAS", "ARCX"}
 
-# ========== ULTIMATE CHROMEDRIVER FINDER ==========
+# ========== BULLETPROOF CHROMEDRIVER FINDER + CHMOD FIX ==========
 def get_chromedriver_service():
     # Ensure chromedriver is installed by webdriver-manager
     ChromeDriverManager().install()
@@ -37,6 +37,8 @@ def get_chromedriver_service():
                     with open(path, "rb") as f:
                         header = f.read(4)
                     if header == b'\x7fELF':
+                        # Ensure permissions are correct (executable)
+                        os.chmod(path, 0o755)
                         print(f"✅ Using ChromeDriver binary: {path}")
                         return Service(path)
                 except Exception:
