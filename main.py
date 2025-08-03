@@ -69,7 +69,7 @@ def scrape_tickers_from_subreddit(subreddit):
 # ========== GOOGLE SHEET HELPERS ==========
 def update_tickers_sheet(gc, tickers):
     ws = gc.open(SHEET_NAME).worksheet(TICKERS_TAB)
-    print(f"📝 Writing {len(tickers)} tickers to the '{TICKERS_TAB}' tab...")
+    print(f"🧹 Clearing and writing {len(tickers)} tickers to the '{TICKERS_TAB}' tab...")
     ws.clear()
     ws.append_rows([[t] for t in tickers])
     return tickers
@@ -144,7 +144,7 @@ def get_volume_info(ticker):
         return results[0]["v"], None
     return None, None
 
-# ========== TECHNICAL ANALYSIS + STRICT BUY LOGIC ==========
+# ========== TECHNICAL ANALYSIS + RELAXED BUY LOGIC ==========
 def analyze_ticker(ticker):
     try:
         price = get_price(ticker)
@@ -153,23 +153,23 @@ def analyze_ticker(ticker):
         macd, signal = get_macd(ticker)
         vol, avg_vol = get_volume_info(ticker)
 
-        # Exclude if RSI too extreme or any indicators missing
-        if rsi is None or rsi < 20 or rsi > 70:
+        # Exclude if RSI too extreme or indicators missing
+        if rsi is None or rsi < 15 or rsi > 80:
             return [
                 ticker, price, ema20, rsi, macd, signal, "", "RSI out of range",
                 datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
             ]
 
         buy_signals = []
-        # RELAXED criteria for swing trades
         if (
             ema20 is not None and ema20 > 0 and
-            price is not None and price > ema20 and
-            rsi is not None and 30 < rsi < 60 and
+            price is not None and
+            rsi is not None and 25 < rsi < 65 and
             macd is not None and signal is not None and macd > signal and
-            vol is not None and avg_vol is not None and vol > avg_vol
+            vol is not None and avg_vol is not None and vol > avg_vol and
+            (price > ema20 or rsi < 40)
         ):
-            buy_signals.append("RSI 30-60, Price>EMA20, MACD crossover, Vol>Avg")
+            buy_signals.append("RSI 25-65, MACD crossover, Vol>Avg, Price>EMA20 or RSI<40")
 
         buy_reason = "; ".join(buy_signals)
         is_bullish = "✅" if buy_signals else ""
@@ -215,7 +215,7 @@ def main():
         print("❌ No tickers found! Exiting.")
         return
 
-    # 2. Write tickers to Google Sheet (tickers tab)
+    # 2. Write tickers to Google Sheet (tickers tab), always clear first
     update_tickers_sheet(gc, all_tickers)
 
     # 3. Analyze each ticker and collect indicator data (parallelized)
