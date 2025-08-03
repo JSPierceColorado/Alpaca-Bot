@@ -1,17 +1,18 @@
-FROM python:3.12-slim
+FROM python:3.12-slim 
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Install system dependencies
+# Install system dependencies for pandas, lxml, etc
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
-    build-essential \
-    python3-dev \
     libxml2-dev \
     libxslt1-dev \
+    python3-dev \
+    libffi-dev \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Install pip packages
