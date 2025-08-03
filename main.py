@@ -311,6 +311,8 @@ def main():
     if failures:
         print("Some tickers failed to fetch all indicator data or had a zero value. See log above for details.")
 
+    print("DEBUG: About to start Alpaca order section...")
+
     # --- Place Alpaca Buy Orders for TOP 5 + Buy Signal ---
     try:
         print("🔗 Connecting to Alpaca for order submission...")
@@ -362,10 +364,14 @@ def main():
                 print(f"⛔ {symbol} does NOT meet Top 5 AND Bullish criteria. Skipping.")
 
     except Exception as e:
+        import traceback
         print(f"❌ Alpaca order section failed: {e}")
+        traceback.print_exc()
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:
+        import traceback
         print("❌ Fatal error:", e)
+        traceback.print_exc()
