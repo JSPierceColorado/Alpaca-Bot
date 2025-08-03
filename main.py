@@ -9,6 +9,8 @@ from datetime import datetime
 import concurrent.futures
 import alpaca_trade_api as tradeapi
 
+print(">>>> RUNNING UPDATED MAIN.PY <<<<")
+
 # ========== CONFIGURATION ==========
 SHEET_NAME = "Trading Log"
 TICKERS_TAB = "tickers"
@@ -252,10 +254,12 @@ def submit_buy_order(api, symbol, notional):
 
 # ========== MAIN ==========
 def main():
+    print(">>>> ENTERED main() <<<<")
     print("🚀 Launching Reddit + S&P 500 screener bot")
     gc = get_google_client()
 
     # Step 1: Update SP500 list to sheet
+    print("DEBUG: Updating S&P 500 list...")
     sp500_set = update_sp500_sheet(gc)
 
     # Step 2: Pull Reddit tickers and update tickers tab
@@ -267,6 +271,7 @@ def main():
     update_tickers_sheet(gc, all_tickers)
 
     # Step 3: Get intersection of Reddit tickers and SP500 list
+    print("DEBUG: Getting tickers from sheet...")
     reddit_set = get_tickers_from_sheet(gc, TICKERS_TAB)
     matching_tickers = sorted(sp500_set & reddit_set)
     print(f"🔎 {len(matching_tickers)} tickers matched S&P 500.")
@@ -287,6 +292,7 @@ def main():
                 failures.append(row[0])
 
     # RANK AND FLAG TOP 5
+    print("DEBUG: Ranking results...")
     scored_rows = [(rank_row(row), row) for row in rows]
     scored_rows = [pair for pair in scored_rows if pair[0] != float('-inf')]
     scored_rows.sort(reverse=True, key=lambda x: x[0])
@@ -375,7 +381,8 @@ def main():
         print(f"❌ Alpaca order section failed: {e}")
         traceback.print_exc()
 
-    print("DEBUG: Reached end of main()")
+    print("DEBUG: Reached end of main(). Sleeping for 30 seconds...")
+    time.sleep(30)
 
 if __name__ == "__main__":
     try:
