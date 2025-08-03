@@ -22,10 +22,10 @@ def get_google_client():
     creds = json.loads(os.getenv("GOOGLE_CREDS_JSON"))
     return gspread.service_account_from_dict(creds)
 
-# ========== WSB TICKER SCRAPER ==========
-def scrape_wsb_tickers_all():
-    headers = {'User-Agent': 'Mozilla/5.0 (compatible; WSB-Ticker-Screener/2.0)'}
-    url = "https://www.reddit.com/r/wallstreetbets/hot.json"
+# ========== MULTI-SUBREDDIT TICKER SCRAPER ==========
+def scrape_tickers_from_subreddit(subreddit):
+    headers = {'User-Agent': 'Mozilla/5.0 (compatible; Ticker-Screener/2.1)'}
+    url = f"https://www.reddit.com/r/{subreddit}/hot.json"
     params = {"limit": 100}
     after = None
     text_blocks = []
@@ -36,7 +36,7 @@ def scrape_wsb_tickers_all():
             params["after"] = after
         resp = requests.get(url, headers=headers, params=params)
         if resp.status_code == 429:
-            print("⚠️ Reddit rate-limited us! Sleeping for 5 seconds.")
+            print(f"⚠️ Reddit rate-limited on r/{subreddit}! Sleeping for 5 seconds.")
             time.sleep(5)
             continue
         resp.raise_for_status()
@@ -51,22 +51,20 @@ def scrape_wsb_tickers_all():
             if selftext:
                 text_blocks.append(selftext)
         total_posts += len(posts)
-        print(f"Scraped {total_posts} WSB posts so far...")
+        print(f"Scraped {total_posts} posts so far from r/{subreddit}...")
         after = data["data"].get("after")
         if not after:
             break
         time.sleep(REDDIT_RATE_LIMIT_DELAY)
 
-    # Regex for tickers: $AAPL or GME (2–5 uppercase letters)
     ticker_set = set()
     for text in text_blocks:
         matches = re.findall(r"\$?([A-Z]{2,5})\b", text)
         for match in matches:
             if match not in {"DD", "USA", "WSB", "CEO", "FOMO", "YOLO", "FD", "TOS", "ETF"}:
                 ticker_set.add(match)
-    tickers = sorted(ticker_set)
-    print(f"🦍 Found {len(tickers)} tickers from r/wallstreetbets: {', '.join(tickers)}")
-    return tickers
+    print(f"🦍 Found {len(ticker_set)} tickers from r/{subreddit}: {', '.join(sorted(ticker_set))}")
+    return ticker_set
 
 # ========== GOOGLE SHEET HELPERS ==========
 def update_tickers_sheet(gc, tickers):
@@ -185,25 +183,28 @@ def analyze_ticker_threaded(ticker):
 
 # ========== MAIN ==========
 def main():
-    print("🚀 Launching WSB screener bot")
+    print("🚀 Launching Reddit multi-subreddit screener bot")
     gc = get_google_client()
 
-    # 1. Get tickers from WSB
-    wsb_tickers = scrape_wsb_tickers_all()
+    subreddits = ["wallstreetbets", "ValueInvesting", "investing"]
+    all_tickers = set()
+    for sub in subreddits:
+        all_tickers |= scrape_tickers_from_subreddit(sub)
+    all_tickers = sorted(all_tickers)
 
-    if not wsb_tickers:
+    if not all_tickers:
         print("❌ No tickers found! Exiting.")
         return
 
     # 2. Write tickers to Google Sheet (tickers tab)
-    update_tickers_sheet(gc, wsb_tickers)
+    update_tickers_sheet(gc, all_tickers)
 
     # 3. Analyze each ticker and collect indicator data (parallelized)
     print("📊 Analyzing tickers for buy signals...")
     rows = []
     failures = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        results = executor.map(analyze_ticker_threaded, wsb_tickers)
+        results = executor.map(analyze_ticker_threaded, all_tickers)
         for row in results:
             if all(str(x) != "" for x in row[1:6]):
                 rows.append(row)
