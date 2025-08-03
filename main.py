@@ -245,6 +245,8 @@ def main():
 
     # RANK AND FLAG TOP 5
     scored_rows = [(rank_row(row), row) for row in rows]
+    # Filter out rows where score is -inf (means data is missing/bad)
+    scored_rows = [pair for pair in scored_rows if pair[0] != float('-inf')]
     scored_rows.sort(reverse=True, key=lambda x: x[0])
     top_5_indices = set(idx for idx, (_, _) in enumerate(scored_rows[:5]))
 
@@ -262,7 +264,7 @@ def main():
         "Bullish Signal", "Buy Reason", "Timestamp", "RankScore", "TopPick"
     ]
     rows_to_write = [header] + output_rows
-    ws.update("A1", rows_to_write)
+    ws.update(values=rows_to_write, range_name="A1")
     print(f"✅ Screener tab updated. Failed tickers: {len(failures)}")
     if failures:
         print("Some tickers failed to fetch all indicator data or had a zero value. See log above for details.")
