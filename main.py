@@ -153,7 +153,7 @@ def analyze_ticker(ticker):
         macd, signal = get_macd(ticker)
         vol, avg_vol = get_volume_info(ticker)
 
-        # --- Exclude if RSI too extreme ---
+        # Exclude if RSI too extreme or any indicators missing
         if rsi is None or rsi < 20 or rsi > 70:
             return [
                 ticker, price, ema20, rsi, macd, signal, "", "RSI out of range",
@@ -161,14 +161,15 @@ def analyze_ticker(ticker):
             ]
 
         buy_signals = []
+        # RELAXED criteria for swing trades
         if (
             ema20 is not None and ema20 > 0 and
-            rsi is not None and 30 <= rsi <= 45 and
-            macd is not None and macd > 0 and
-            signal is not None and macd > signal and
+            price is not None and price > ema20 and
+            rsi is not None and 30 < rsi < 60 and
+            macd is not None and signal is not None and macd > signal and
             vol is not None and avg_vol is not None and vol > avg_vol
         ):
-            buy_signals.append("RSI 30-45, MACD>0/crossover, Vol>Avg")
+            buy_signals.append("RSI 30-60, Price>EMA20, MACD crossover, Vol>Avg")
 
         buy_reason = "; ".join(buy_signals)
         is_bullish = "✅" if buy_signals else ""
@@ -181,7 +182,7 @@ def analyze_ticker(ticker):
             round(macd, 4) if macd else "",
             round(signal, 4) if signal else "",
             is_bullish,
-            buy_reason if buy_reason else "Not all strict criteria met",
+            buy_reason if buy_reason else "Not all relaxed criteria met",
             datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
         ]
     except Exception as e:
