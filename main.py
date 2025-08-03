@@ -3,97 +3,55 @@ import json
 import time
 import re
 import requests
+from bs4 import BeautifulSoup
 import gspread
 from datetime import datetime
 import concurrent.futures
 
 # ========== CONFIGURATION ==========
-API_KEY = os.getenv("API_KEY")
 SHEET_NAME = "Trading Log"
 TICKERS_TAB = "tickers"
 SCREENER_TAB = "screener"
 
-RATE_LIMIT_DELAY = 0.1      # Try 0.05–0.15 if your plan allows!
-MAX_WORKERS = 20            # Adjust for your paid Polygon plan
+RATE_LIMIT_DELAY = 0.1
+MAX_WORKERS = 20              # As fast as your API key allows
 EXCHANGES = {"XNYS", "XNAS", "ARCX"}
+API_KEY = os.getenv("API_KEY")
 
 # ========== GOOGLE SHEETS AUTH ==========
 def get_google_client():
     creds = json.loads(os.getenv("GOOGLE_CREDS_JSON"))
     return gspread.service_account_from_dict(creds)
 
-# ========== POLYGON API HELPERS ==========
-def get_with_rate_limit(url, params=None):
-    resp = requests.get(url, params=params)
+# ========== WSB TICKER SCRAPER ==========
+def scrape_wsb_tickers():
+    """
+    Scrape all tickers from all visible hot posts on r/wallstreetbets.
+    Returns a sorted, deduped list of possible US stock tickers.
+    """
+    headers = {'User-Agent': 'Mozilla/5.0 (compatible; WSB-Ticker-Screener/1.0)'}
+    url = "https://www.reddit.com/r/wallstreetbets/hot/"
+    resp = requests.get(url, headers=headers)
     resp.raise_for_status()
-    time.sleep(RATE_LIMIT_DELAY)
-    return resp
 
-def get_market_cap(ticker):
-    url = f"https://api.polygon.io/v3/reference/tickers/{ticker}"
-    params = {"apiKey": API_KEY}
-    try:
-        resp = get_with_rate_limit(url, params=params)
-        data = resp.json()
-        market_cap = data.get("results", {}).get("market_cap", 0)
-        return ticker, market_cap if market_cap else 0
-    except Exception as e:
-        print(f"Error getting market cap for {ticker}: {e}")
-        return ticker, 0
+    soup = BeautifulSoup(resp.text, 'html.parser')
+    posts = soup.find_all("div", attrs={"data-testid": "post-container"})
+    text_blocks = []
+    for post in posts:
+        h3 = post.find("h3")
+        if h3:
+            text_blocks.append(h3.text)
 
-def scrape_tickers_parallel_market_cap():
-    print("🌐 Fetching tickers from Polygon.io ticker API (filtering by MCAP > $750M)...")
-    url = "https://api.polygon.io/v3/reference/tickers"
-    params = {
-        "market": "stocks",
-        "active": "true",
-        "limit": 1000,
-        "apiKey": API_KEY
-    }
-    all_tickers = []
-    next_url = url
-
-    # Step 1: Gather all tickers on specified exchanges
-    print("📃 Collecting all US tickers from target exchanges...")
-    while next_url:
-        if next_url == url:
-            resp = get_with_rate_limit(next_url, params=params)
-        else:
-            if next_url.startswith("/"):
-                next_url = "https://api.polygon.io" + next_url
-            if "apiKey=" not in next_url:
-                sep = "&" if "?" in next_url else "?"
-                next_url = f"{next_url}{sep}apiKey={API_KEY}"
-            resp = get_with_rate_limit(next_url)
-        data = resp.json()
-        for item in data["results"]:
-            symbol = item["ticker"]
-            exchange = item.get("primary_exchange")
-            if (
-                exchange in EXCHANGES and
-                re.match(r"^[A-Z]{1,5}$", symbol)
-            ):
-                all_tickers.append(symbol)
-        next_url = data.get("next_url")
-
-    print(f"📝 Got {len(all_tickers)} tickers to check market cap for.")
-
-    # Step 2: Fetch market caps in parallel
-    filtered_tickers = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        future_to_ticker = {executor.submit(get_market_cap, t): t for t in all_tickers}
-        for i, future in enumerate(concurrent.futures.as_completed(future_to_ticker), 1):
-            ticker, market_cap = future.result()
-            if market_cap >= 1_000_000_000:
-                filtered_tickers.append(ticker)
-                print(f"  ✔️ {ticker}: MCAP ${market_cap:,}")
-            else:
-                print(f"  ❌ {ticker}: MCAP ${market_cap:,}")
-            if i % 25 == 0 or i == len(all_tickers):
-                print(f"  ...checked {i}/{len(all_tickers)} tickers")
-
-    print(f"✅ Done. {len(filtered_tickers)} tickers with market cap > $750M.")
-    return sorted(set(filtered_tickers))
+    # Regex for tickers: $AAPL or GME (1–5 uppercase letters)
+    ticker_set = set()
+    for text in text_blocks:
+        matches = re.findall(r"\$?([A-Z]{2,5})\b", text)
+        for match in matches:
+            if match not in {"DD", "USA", "WSB", "CEO", "FOMO", "YOLO", "FD", "TOS", "ETF"}:
+                ticker_set.add(match)
+    tickers = sorted(ticker_set)
+    print(f"🦍 Found {len(tickers)} tickers from r/wallstreetbets: {', '.join(tickers)}")
+    return tickers
 
 # ========== GOOGLE SHEET HELPERS ==========
 def update_tickers_sheet(gc, tickers):
@@ -103,7 +61,13 @@ def update_tickers_sheet(gc, tickers):
     ws.append_rows([[t] for t in tickers])
     return tickers
 
-# ========== INDICATOR FETCH FUNCTIONS ==========
+# ========== POLYGON INDICATOR FETCH FUNCTIONS ==========
+def get_with_rate_limit(url, params=None):
+    resp = requests.get(url, params=params)
+    resp.raise_for_status()
+    time.sleep(RATE_LIMIT_DELAY)
+    return resp
+
 def get_price(ticker):
     url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/prev"
     params = {"adjusted": "true", "apiKey": API_KEY}
@@ -206,11 +170,14 @@ def analyze_ticker_threaded(ticker):
 
 # ========== MAIN ==========
 def main():
-    print("🚀 Launching screener bot")
+    print("🚀 Launching WSB screener bot")
     gc = get_google_client()
 
-    # 1. Scrape only good tickers (market cap > $750M), fast
-    tickers = scrape_tickers_parallel_market_cap()
+    # 1. Get all tickers from r/wallstreetbets (no limit)
+    tickers = scrape_wsb_tickers()
+    if not tickers:
+        print("❌ No tickers found from WSB! Exiting.")
+        return
 
     # 2. Write tickers to Google Sheet (tickers tab)
     update_tickers_sheet(gc, tickers)
@@ -222,7 +189,6 @@ def main():
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         results = executor.map(analyze_ticker_threaded, tickers)
         for row in results:
-            # Only keep tickers with *all* indicators present
             if all(str(x) != "" for x in row[1:6]):
                 rows.append(row)
             else:
