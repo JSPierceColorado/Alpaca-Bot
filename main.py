@@ -74,6 +74,40 @@ def update_tickers_sheet(gc, tickers):
     ws.append_rows([[t] for t in tickers])
     return tickers
 
+# ========== POLYGON MARKET CAP SCRAPER ==========
+def get_market_caps(tickers):
+    print("🔎 Fetching market caps from Polygon.io...")
+    url = "https://api.polygon.io/v3/reference/tickers"
+    params = {
+        "market": "stocks",
+        "active": "true",
+        "limit": 1000,
+        "apiKey": API_KEY
+    }
+    market_caps = {}
+    processed = 0
+    next_url = url
+
+    while next_url and processed < 10000:  # Avoid infinite loops
+        if next_url == url:
+            resp = requests.get(next_url, params=params)
+        else:
+            resp = requests.get(next_url)
+        resp.raise_for_status()
+        data = resp.json()
+        for item in data.get("results", []):
+            t = item.get("ticker")
+            cap = item.get("market_cap")
+            if t and cap:
+                market_caps[t] = cap
+        processed += len(data.get("results", []))
+        next_url = data.get("next_url")
+        if next_url and "apiKey=" not in next_url:
+            sep = "&" if "?" in next_url else "?"
+            next_url = f"{next_url}{sep}apiKey={API_KEY}"
+    print(f"✅ Fetched market cap data for {len(market_caps)} stocks.")
+    return market_caps
+
 # ========== POLYGON INDICATOR FETCH FUNCTIONS ==========
 def get_with_rate_limit(url, params=None):
     resp = requests.get(url, params=params)
@@ -144,7 +178,7 @@ def get_volume_info(ticker):
         return results[0]["v"], None
     return None, None
 
-# ========== TECHNICAL ANALYSIS + RELAXED BUY LOGIC ==========
+# ========== TECHNICAL ANALYSIS + STRICT BUY LOGIC ==========
 def analyze_ticker(ticker):
     try:
         price = get_price(ticker)
@@ -153,8 +187,8 @@ def analyze_ticker(ticker):
         macd, signal = get_macd(ticker)
         vol, avg_vol = get_volume_info(ticker)
 
-        # Exclude if RSI is extreme or any indicators missing
-        if rsi is None or rsi < 12 or rsi > 85:
+        # Strict but effective for swings
+        if rsi is None or rsi < 20 or rsi > 70:
             return [
                 ticker, price, ema20, rsi, macd, signal, "", "RSI out of range",
                 datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -163,13 +197,12 @@ def analyze_ticker(ticker):
         buy_signals = []
         if (
             ema20 is not None and ema20 > 0 and
-            price is not None and
-            rsi is not None and 22 < rsi < 68 and
+            price is not None and price > ema20 and
+            rsi is not None and 30 < rsi < 60 and
             macd is not None and signal is not None and macd > signal and
-            vol is not None and avg_vol is not None and vol > avg_vol and
-            (price > ema20 or rsi < 45)
+            vol is not None and avg_vol is not None and vol > avg_vol
         ):
-            buy_signals.append("RSI 22-68, MACD crossover, Vol>Avg, Price>EMA20 or RSI<45")
+            buy_signals.append("RSI 30-60, MACD crossover, Price>EMA20, Vol>Avg")
 
         buy_reason = "; ".join(buy_signals)
         is_bullish = "✅" if buy_signals else ""
@@ -182,7 +215,7 @@ def analyze_ticker(ticker):
             round(macd, 4) if macd else "",
             round(signal, 4) if signal else "",
             is_bullish,
-            buy_reason if buy_reason else "Not all slightly-looser criteria met",
+            buy_reason if buy_reason else "Not all strict criteria met",
             datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
         ]
     except Exception as e:
@@ -215,22 +248,29 @@ def main():
         print("❌ No tickers found! Exiting.")
         return
 
-    # 2. Write tickers to Google Sheet (tickers tab), always clear first
-    update_tickers_sheet(gc, all_tickers)
+    # Market cap filter (fundamental screening)
+    market_caps = get_market_caps(all_tickers)
+    filtered_tickers = [t for t in all_tickers if market_caps.get(t) and market_caps[t] >= 1_000_000_000]
+    if not filtered_tickers:
+        print("❌ No tickers with market cap ≥ $1B found! Exiting.")
+        return
 
-    # 3. Analyze each ticker and collect indicator data (parallelized)
+    # Write tickers to Google Sheet (tickers tab), always clear first
+    update_tickers_sheet(gc, filtered_tickers)
+
+    # Analyze each ticker and collect indicator data (parallelized)
     print("📊 Analyzing tickers for buy signals...")
     rows = []
     failures = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        results = executor.map(analyze_ticker_threaded, all_tickers)
+        results = executor.map(analyze_ticker_threaded, filtered_tickers)
         for row in results:
             if not any_indicator_zero_or_blank(row):
                 rows.append(row)
             else:
                 failures.append(row[0])
 
-    # 4. Clear and update screener tab with fresh indicator data
+    # Clear and update screener tab with fresh indicator data
     ws = gc.open(SHEET_NAME).worksheet(SCREENER_TAB)
     print("🧹 Clearing screener tab of all existing data...")
     ws.clear()
