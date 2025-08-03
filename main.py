@@ -81,7 +81,8 @@ def scrape_google_finance_most_active():
     options.headless = True
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    service = Service(ChromeDriverManager().install())
+    chromedriver_path = ChromeDriverManager().install()
+    service = Service(executable_path=chromedriver_path)
     driver = webdriver.Chrome(service=service, options=options)
 
     url = "https://www.google.com/finance/markets/most-active"
@@ -107,7 +108,8 @@ def scrape_google_finance_trending():
     options.headless = True
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    service = Service(ChromeDriverManager().install())
+    chromedriver_path = ChromeDriverManager().install()
+    service = Service(executable_path=chromedriver_path)
     driver = webdriver.Chrome(service=service, options=options)
 
     url = "https://www.google.com/finance/"
