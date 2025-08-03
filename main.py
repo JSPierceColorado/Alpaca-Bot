@@ -149,13 +149,11 @@ def get_volume_info(ticker):
 def get_analyst_consensus(ticker):
     try:
         ticker_obj = yf.Ticker(ticker)
-        # Use yfinance.info "recommendationKey" if available
         info = ticker_obj.info
         if "recommendationKey" in info:
             key = info["recommendationKey"]
             if key in ["buy", "strong_buy"]:
                 return "buy"
-        # Fallback: Use recommendations DataFrame
         recs = ticker_obj.recommendations
         if recs is not None and not recs.empty:
             latest = recs.iloc[-1]
@@ -165,7 +163,11 @@ def get_analyst_consensus(ticker):
                     return "buy"
         return None
     except Exception as e:
-        print(f"⚠️ {ticker} analyst consensus not found: {e}")
+        if "Too Many Requests" in str(e) or "429" in str(e):
+            print(f"⚠️ Rate limited on {ticker}. Waiting 10s...")
+            time.sleep(10)
+        else:
+            print(f"⚠️ {ticker} analyst consensus not found: {e}")
         return None
 
 # ========== TECHNICAL ANALYSIS + BUY LOGIC ==========
@@ -275,6 +277,7 @@ def main():
             consensus = get_analyst_consensus(ticker)
             if consensus == "buy":
                 filtered_rows.append(row)
+            time.sleep(0.7)  # Delay to avoid rate-limit
 
     print(f"✅ {len(filtered_rows)} stocks passed consensus filter.")
 
