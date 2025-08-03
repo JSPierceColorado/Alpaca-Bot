@@ -5,6 +5,7 @@ import re
 import requests
 import gspread
 from datetime import datetime
+import concurrent.futures
 
 # ========== CONFIGURATION ==========
 API_KEY = os.getenv("API_KEY")
@@ -13,7 +14,8 @@ TICKERS_TAB = "tickers"
 SCREENER_TAB = "screener"
 
 RATE_LIMIT_DELAY = 0.6      # seconds between API calls (tune for your Polygon plan)
-EXCHANGES = {"XNYS", "XNAS", "ARCX"}  # NYSE, NASDAQ, ARCA
+EXCHANGES = {"XNYS", "XNAS", "ARCX"}
+MAX_WORKERS = 8             # number of threads to use (tune for your plan/rate limits)
 
 # ========== GOOGLE SHEETS AUTH ==========
 def get_google_client():
@@ -34,12 +36,12 @@ def get_market_cap(ticker):
         resp = get_with_rate_limit(url, params=params)
         data = resp.json()
         market_cap = data.get("results", {}).get("market_cap", 0)
-        return market_cap if market_cap else 0
+        return ticker, market_cap if market_cap else 0
     except Exception as e:
         print(f"Error getting market cap for {ticker}: {e}")
-        return 0
+        return ticker, 0
 
-def scrape_tickers_with_market_cap():
+def scrape_tickers_parallel_market_cap():
     print("🌐 Fetching tickers from Polygon.io ticker API (filtering by MCAP > $750M)...")
     url = "https://api.polygon.io/v3/reference/tickers"
     params = {
@@ -76,17 +78,19 @@ def scrape_tickers_with_market_cap():
 
     print(f"📝 Got {len(all_tickers)} tickers to check market cap for.")
 
-    # Step 2: For each ticker, get details and filter on market cap
+    # Step 2: Fetch market caps in parallel
     filtered_tickers = []
-    for i, ticker in enumerate(all_tickers, 1):
-        market_cap = get_market_cap(ticker)
-        if market_cap > 750_000_000:
-            filtered_tickers.append(ticker)
-            print(f"  ✔️ {ticker}: MCAP ${market_cap:,}")
-        else:
-            print(f"  ❌ {ticker}: MCAP ${market_cap:,}")
-        if i % 25 == 0 or i == len(all_tickers):
-            print(f"  ...checked {i}/{len(all_tickers)} tickers")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        future_to_ticker = {executor.submit(get_market_cap, t): t for t in all_tickers}
+        for i, future in enumerate(concurrent.futures.as_completed(future_to_ticker), 1):
+            ticker, market_cap = future.result()
+            if market_cap > 750_000_000:
+                filtered_tickers.append(ticker)
+                print(f"  ✔️ {ticker}: MCAP ${market_cap:,}")
+            else:
+                print(f"  ❌ {ticker}: MCAP ${market_cap:,}")
+            if i % 25 == 0 or i == len(all_tickers):
+                print(f"  ...checked {i}/{len(all_tickers)} tickers")
 
     print(f"✅ Done. {len(filtered_tickers)} tickers with market cap > $750M.")
     return sorted(set(filtered_tickers))
@@ -196,28 +200,31 @@ def analyze_ticker(ticker):
         print(f"⚠️ {ticker} failed: {e}")
         return [ticker, "", "", "", "", "", "", "", ""]
 
+def analyze_ticker_threaded(ticker):
+    print(f"🔍 {ticker}")
+    return analyze_ticker(ticker)
+
 # ========== MAIN ==========
 def main():
     print("🚀 Launching screener bot")
     gc = get_google_client()
 
-    # 1. Scrape only good tickers (market cap > $750M)
-    tickers = scrape_tickers_with_market_cap()
+    # 1. Scrape only good tickers (market cap > $750M), fast
+    tickers = scrape_tickers_parallel_market_cap()
 
     # 2. Write tickers to Google Sheet (tickers tab)
     update_tickers_sheet(gc, tickers)
 
-    # 3. Analyze each ticker and collect indicator data
+    # 3. Analyze each ticker and collect indicator data (parallelized)
     print("📊 Analyzing tickers for buy signals...")
     rows = []
     failures = []
-
-    for t in tickers:
-        print(f"🔍 {t}")
-        row = analyze_ticker(t)
-        rows.append(row)
-        if all(x == "" for x in row[1:6]):  # if all indicator columns failed
-            failures.append(row[0])
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        results = executor.map(analyze_ticker_threaded, tickers)
+        for row in results:
+            rows.append(row)
+            if all(x == "" for x in row[1:6]):  # if all indicator columns failed
+                failures.append(row[0])
 
     # 4. Clear and update screener tab with fresh indicator data
     ws = gc.open(SHEET_NAME).worksheet(SCREENER_TAB)
