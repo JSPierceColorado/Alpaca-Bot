@@ -29,8 +29,20 @@ def get_with_rate_limit(url, params=None):
     time.sleep(RATE_LIMIT_DELAY)
     return resp
 
-def scrape_tickers():
-    print("🌐 Fetching tickers from Polygon.io ticker API (MCAP > $750M)...")
+def get_market_cap(ticker):
+    url = f"https://api.polygon.io/v3/reference/tickers/{ticker}"
+    params = {"apiKey": API_KEY}
+    try:
+        resp = get_with_rate_limit(url, params=params)
+        data = resp.json()
+        market_cap = data.get("results", {}).get("market_cap", 0)
+        return market_cap if market_cap else 0
+    except Exception as e:
+        print(f"Error getting market cap for {ticker}: {e}")
+        return 0
+
+def scrape_tickers_with_market_cap():
+    print("🌐 Fetching tickers from Polygon.io ticker API (filtering by MCAP > $750M)...")
     url = "https://api.polygon.io/v3/reference/tickers"
     params = {
         "market": "stocks",
@@ -39,13 +51,12 @@ def scrape_tickers():
         "apiKey": API_KEY
     }
     all_tickers = []
-    total_raw = 0
-    total_kept = 0
     next_url = url
 
+    # Step 1: Gather all tickers on specified exchanges
+    print("📃 Collecting all US tickers from target exchanges...")
     while next_url:
         if next_url == url:
-            print(f"Requesting: {next_url} (params included)")
             resp = get_with_rate_limit(next_url, params=params)
         else:
             if next_url.startswith("/"):
@@ -53,28 +64,34 @@ def scrape_tickers():
             if "apiKey=" not in next_url:
                 sep = "&" if "?" in next_url else "?"
                 next_url = f"{next_url}{sep}apiKey={API_KEY}"
-            print(f"Requesting: {next_url}")
             resp = get_with_rate_limit(next_url)
         data = resp.json()
         for item in data["results"]:
             symbol = item["ticker"]
             exchange = item.get("primary_exchange")
-            market_cap = item.get("market_cap", 0) or 0
-            # Optional: filter by price (Polygon v3/reference/tickers returns "last_price" only if you ask for it)
-            # price = item.get("last_price", 0) or 0
-
             if (
-                exchange in EXCHANGES
-                and market_cap > 750_000_000
-                and re.match(r"^[A-Z]{1,5}$", symbol)
+                exchange in EXCHANGES and
+                re.match(r"^[A-Z]{1,5}$", symbol)
             ):
                 all_tickers.append(symbol)
-                total_kept += 1
-        total_raw += len(data["results"])
-        print(f"    Kept {total_kept} / {total_raw} so far (MCAP filter)")
         next_url = data.get("next_url")
-    print(f"✅ Done. {len(all_tickers)} tickers with market cap > $750M.")
-    return sorted(set(all_tickers))
+
+    print(f"📝 Got {len(all_tickers)} tickers to check market cap for.")
+
+    # Step 2: For each ticker, get details and filter on market cap
+    filtered_tickers = []
+    for i, ticker in enumerate(all_tickers, 1):
+        market_cap = get_market_cap(ticker)
+        if market_cap > 750_000_000:
+            filtered_tickers.append(ticker)
+            print(f"  ✔️ {ticker}: MCAP ${market_cap:,}")
+        else:
+            print(f"  ❌ {ticker}: MCAP ${market_cap:,}")
+        if i % 25 == 0 or i == len(all_tickers):
+            print(f"  ...checked {i}/{len(all_tickers)} tickers")
+
+    print(f"✅ Done. {len(filtered_tickers)} tickers with market cap > $750M.")
+    return sorted(set(filtered_tickers))
 
 # ===== GOOGLE SHEET HELPERS =====
 def update_tickers_sheet(gc, tickers):
