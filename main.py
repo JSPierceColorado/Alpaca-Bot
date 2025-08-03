@@ -22,12 +22,10 @@ REDDIT_RATE_LIMIT_DELAY = 1.0
 MAX_WORKERS = 20
 API_KEY = os.getenv("API_KEY")
 
-# ========== GOOGLE SHEETS AUTH ==========
 def get_google_client():
     creds = json.loads(os.getenv("GOOGLE_CREDS_JSON"))
     return gspread.service_account_from_dict(creds)
 
-# ========== S&P 500 SHEET IMPORT ==========
 def update_sp500_sheet(gc):
     url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
     tables = pd.read_html(url)
@@ -40,12 +38,10 @@ def update_sp500_sheet(gc):
     print(f"✅ Updated S&P 500 list in '{SP500_TAB}' tab ({len(tickers)} tickers).")
     return set(tickers)
 
-# ========== GENERIC TICKER GETTER FROM ANY TAB ==========
 def get_tickers_from_sheet(gc, tabname):
     ws = gc.open(SHEET_NAME).worksheet(tabname)
     return set([t.strip() for t in ws.col_values(1)[1:] if t.strip()])
 
-# ========== MULTI-SUBREDDIT TICKER SCRAPER ==========
 def scrape_tickers_from_subreddit(subreddit):
     headers = {'User-Agent': 'Mozilla/5.0 (compatible; Ticker-Screener/2.1)'}
     url = f"https://www.reddit.com/r/{subreddit}/hot.json"
@@ -89,7 +85,6 @@ def scrape_tickers_from_subreddit(subreddit):
     print(f"🦍 Found {len(ticker_set)} tickers from r/{subreddit}: {', '.join(sorted(ticker_set))}")
     return ticker_set
 
-# ========== GOOGLE SHEET HELPERS ==========
 def update_tickers_sheet(gc, tickers):
     ws = gc.open(SHEET_NAME).worksheet(TICKERS_TAB)
     print(f"🧹 Clearing and writing {len(tickers)} tickers to the '{TICKERS_TAB}' tab...")
@@ -98,7 +93,6 @@ def update_tickers_sheet(gc, tickers):
     ws.append_rows([[t] for t in tickers])
     return tickers
 
-# ========== POLYGON INDICATOR FETCH FUNCTIONS ==========
 def get_with_rate_limit(url, params=None):
     resp = requests.get(url, params=params)
     resp.raise_for_status()
@@ -168,7 +162,6 @@ def get_volume_info(ticker):
         return results[0]["v"], None
     return None, None
 
-# ========== TECHNICAL ANALYSIS + BUY LOGIC ==========
 def analyze_ticker(ticker):
     try:
         price = get_price(ticker)
@@ -225,20 +218,18 @@ def rank_row(row):
         signal = float(row[5])
         price_score = (price - ema20) / ema20 if ema20 > 0 else 0
         macd_score = macd - signal
-        rsi_score = 60 - rsi  # prefer not-yet-overbought
+        rsi_score = 60 - rsi
         score = price_score * 2 + macd_score * 2 + rsi_score * 0.5
         return score
     except:
         return float('-inf')
 
-# ========== FILTER: REMOVE ROWS WITH EXACTLY ZERO OR BLANK INDICATORS ==========
 def any_indicator_zero_or_blank(row):
     for x in row[1:6]:
         if x == "" or x == 0 or x == 0.0 or x == "0" or x == "0.0" or x == "0.00":
             return True
     return False
 
-# ========== ALPACA ORDER SUBMISSION ==========
 def submit_buy_order(api, symbol, notional):
     try:
         api.submit_order(
@@ -252,17 +243,25 @@ def submit_buy_order(api, symbol, notional):
     except Exception as e:
         print(f"❌ Failed to submit buy order for {symbol}: {e}")
 
-# ========== MAIN ==========
+def write_to_sheet_in_batches(ws, header, output_rows, batch_size=100):
+    print(f"DEBUG: Writing header row...")
+    ws.clear()
+    ws.append_row(header)
+    total = len(output_rows)
+    for i in range(0, total, batch_size):
+        batch = output_rows[i:i + batch_size]
+        print(f"DEBUG: Writing batch {i//batch_size+1}: rows {i+1}-{i+len(batch)}...")
+        ws.append_rows(batch)
+        time.sleep(1)  # Safety delay to avoid API rate limit
+
 def main():
     print(">>>> ENTERED main() <<<<")
     print("🚀 Launching Reddit + S&P 500 screener bot")
     gc = get_google_client()
 
-    # Step 1: Update SP500 list to sheet
     print("DEBUG: Updating S&P 500 list...")
     sp500_set = update_sp500_sheet(gc)
 
-    # Step 2: Pull Reddit tickers and update tickers tab
     subreddits = ["wallstreetbets", "investing"]
     all_tickers = set()
     for sub in subreddits:
@@ -270,7 +269,6 @@ def main():
     all_tickers = sorted(all_tickers)
     update_tickers_sheet(gc, all_tickers)
 
-    # Step 3: Get intersection of Reddit tickers and SP500 list
     print("DEBUG: Getting tickers from sheet...")
     reddit_set = get_tickers_from_sheet(gc, TICKERS_TAB)
     matching_tickers = sorted(sp500_set & reddit_set)
@@ -279,7 +277,6 @@ def main():
         print("❌ No S&P 500 tickers found! Exiting.")
         return
 
-    # Step 4: Run analysis only on matching tickers
     print("📊 Analyzing S&P 500 Reddit tickers for buy signals...")
     rows = []
     failures = []
@@ -291,42 +288,29 @@ def main():
             else:
                 failures.append(row[0])
 
-    # RANK AND FLAG TOP 5
     print("DEBUG: Ranking results...")
     scored_rows = [(rank_row(row), row) for row in rows]
     scored_rows = [pair for pair in scored_rows if pair[0] != float('-inf')]
     scored_rows.sort(reverse=True, key=lambda x: x[0])
     top_5_indices = set(idx for idx, (_, _) in enumerate(scored_rows[:5]))
 
-    # Add RankScore and TopPick columns
     output_rows = []
     for idx, (score, row) in enumerate(scored_rows):
         top_pick = "TOP 5" if idx in top_5_indices else ""
         output_rows.append(row + [round(score, 3), top_pick])
 
     ws = gc.open(SHEET_NAME).worksheet(SCREENER_TAB)
-    print("🧹 Clearing screener tab of all existing data...")
-    ws.clear()
     header = [
-        "Ticker", "Price", "EMA_20", "RSI_14", "MACD", "Signal", 
+        "Ticker", "Price", "EMA_20", "RSI_14", "MACD", "Signal",
         "Bullish Signal", "Buy Reason", "Timestamp", "RankScore", "TopPick"
     ]
-    rows_to_write = [header] + output_rows
 
-    try:
-        ws.update(values=rows_to_write, range_name="A1")
-    except Exception as e:
-        print(f"❌ Error during screener tab update: {e}")
-        import traceback
-        traceback.print_exc()
-
+    print(f"🧹 Clearing screener tab and writing in batches (total {len(output_rows)} rows)...")
+    write_to_sheet_in_batches(ws, header, output_rows, batch_size=100)
     print(f"✅ Screener tab updated. Failed tickers: {len(failures)}")
-    if failures:
-        print("Some tickers failed to fetch all indicator data or had a zero value. See log above for details.")
 
     print("DEBUG: Screener tab updated! About to start Alpaca order section...")
 
-    # --- Place Alpaca Buy Orders for TOP 5 + Buy Signal ---
     try:
         print("🔗 Connecting to Alpaca for order submission...")
         alpaca_api = tradeapi.REST(
@@ -338,13 +322,11 @@ def main():
         buying_power = float(account.buying_power)
         print(f"💰 Buying power: ${buying_power:.2f}")
 
-        # Get screener rows
         ws = gc.open(SHEET_NAME).worksheet(SCREENER_TAB)
         sheet_data = ws.get_all_values()
         header = sheet_data[0]
         rows = sheet_data[1:]
 
-        # Get current positions (for safety: don't rebuy same ticker)
         try:
             positions = {p.symbol for p in alpaca_api.list_positions()}
             print(f"💼 Current Alpaca positions: {positions}")
