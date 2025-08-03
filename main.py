@@ -6,6 +6,7 @@ import requests
 import gspread
 from datetime import datetime
 import concurrent.futures
+import yfinance as yf
 
 # ========== CONFIGURATION ==========
 SHEET_NAME = "Trading Log"
@@ -144,6 +145,29 @@ def get_volume_info(ticker):
         return results[0]["v"], None
     return None, None
 
+# ========== ANALYST CONSENSUS (YAHOO FINANCE/YFINANCE) ==========
+def get_analyst_consensus(ticker):
+    try:
+        ticker_obj = yf.Ticker(ticker)
+        # Use yfinance.info "recommendationKey" if available
+        info = ticker_obj.info
+        if "recommendationKey" in info:
+            key = info["recommendationKey"]
+            if key in ["buy", "strong_buy"]:
+                return "buy"
+        # Fallback: Use recommendations DataFrame
+        recs = ticker_obj.recommendations
+        if recs is not None and not recs.empty:
+            latest = recs.iloc[-1]
+            if "To Grade" in latest:
+                grade = latest["To Grade"].lower()
+                if "buy" in grade:
+                    return "buy"
+        return None
+    except Exception as e:
+        print(f"⚠️ {ticker} analyst consensus not found: {e}")
+        return None
+
 # ========== TECHNICAL ANALYSIS + BUY LOGIC ==========
 def analyze_ticker(ticker):
     try:
@@ -229,7 +253,6 @@ def main():
         print("❌ No tickers found! Exiting.")
         return
 
-    # No market cap filter! Just use all_tickers
     update_tickers_sheet(gc, all_tickers)
 
     print("📊 Analyzing tickers for buy signals...")
@@ -243,9 +266,20 @@ def main():
             else:
                 failures.append(row[0])
 
+    # ========== ANALYST CONSENSUS FILTER ==========
+    print("🧐 Filtering by analyst consensus ('buy' or better)...")
+    filtered_rows = []
+    for row in rows:
+        ticker = row[0]
+        if row[6] == "✅":
+            consensus = get_analyst_consensus(ticker)
+            if consensus == "buy":
+                filtered_rows.append(row)
+
+    print(f"✅ {len(filtered_rows)} stocks passed consensus filter.")
+
     # RANK AND FLAG TOP 5
-    scored_rows = [(rank_row(row), row) for row in rows]
-    # Filter out rows where score is -inf (means data is missing/bad)
+    scored_rows = [(rank_row(row), row) for row in filtered_rows]
     scored_rows = [pair for pair in scored_rows if pair[0] != float('-inf')]
     scored_rows.sort(reverse=True, key=lambda x: x[0])
     top_5_indices = set(idx for idx, (_, _) in enumerate(scored_rows[:5]))
