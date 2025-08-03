@@ -13,9 +13,9 @@ SHEET_NAME = "Trading Log"
 TICKERS_TAB = "tickers"
 SCREENER_TAB = "screener"
 
-RATE_LIMIT_DELAY = 0.6      # seconds between API calls (tune for your Polygon plan)
+RATE_LIMIT_DELAY = 0.1      # Try 0.05–0.15 if your plan allows!
+MAX_WORKERS = 20            # Adjust for your paid Polygon plan
 EXCHANGES = {"XNYS", "XNAS", "ARCX"}
-MAX_WORKERS = 8             # number of threads to use (tune for your plan/rate limits)
 
 # ========== GOOGLE SHEETS AUTH ==========
 def get_google_client():
@@ -222,8 +222,10 @@ def main():
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         results = executor.map(analyze_ticker_threaded, tickers)
         for row in results:
-            rows.append(row)
-            if all(x == "" for x in row[1:6]):  # if all indicator columns failed
+            # Only keep tickers with *all* indicators present
+            if all(str(x) != "" for x in row[1:6]):
+                rows.append(row)
+            else:
                 failures.append(row[0])
 
     # 4. Clear and update screener tab with fresh indicator data
@@ -237,7 +239,7 @@ def main():
     ws.append_rows(rows)
     print(f"✅ Screener tab updated. Failed tickers: {len(failures)}")
     if failures:
-        print("Some tickers failed to fetch. See log above for details.")
+        print("Some tickers failed to fetch all indicator data. See log above for details.")
 
 if __name__ == "__main__":
     try:
