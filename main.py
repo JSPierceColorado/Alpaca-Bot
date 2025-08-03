@@ -30,7 +30,7 @@ def get_with_rate_limit(url, params=None):
     return resp
 
 def scrape_tickers():
-    print("🌐 Fetching tickers from Polygon.io ticker API...")
+    print("🌐 Fetching tickers from Polygon.io ticker API (MCAP > $750M)...")
     url = "https://api.polygon.io/v3/reference/tickers"
     params = {
         "market": "stocks",
@@ -38,8 +38,9 @@ def scrape_tickers():
         "limit": 1000,
         "apiKey": API_KEY
     }
-    all_tickers = set()
-    total = 0
+    all_tickers = []
+    total_raw = 0
+    total_kept = 0
     next_url = url
 
     while next_url:
@@ -55,17 +56,25 @@ def scrape_tickers():
             print(f"Requesting: {next_url}")
             resp = get_with_rate_limit(next_url)
         data = resp.json()
-        tickers = [
-            item["ticker"] for item in data["results"]
-            if item.get("primary_exchange") in EXCHANGES
-        ]
-        tickers = [t for t in tickers if re.match(r"^[A-Z]{1,5}$", t)]
-        all_tickers.update(tickers)
-        total += len(tickers)
-        print(f"    Fetched {len(tickers)} tickers, total so far: {total}")
+        for item in data["results"]:
+            symbol = item["ticker"]
+            exchange = item.get("primary_exchange")
+            market_cap = item.get("market_cap", 0) or 0
+            # Optional: filter by price (Polygon v3/reference/tickers returns "last_price" only if you ask for it)
+            # price = item.get("last_price", 0) or 0
+
+            if (
+                exchange in EXCHANGES
+                and market_cap > 750_000_000
+                and re.match(r"^[A-Z]{1,5}$", symbol)
+            ):
+                all_tickers.append(symbol)
+                total_kept += 1
+        total_raw += len(data["results"])
+        print(f"    Kept {total_kept} / {total_raw} so far (MCAP filter)")
         next_url = data.get("next_url")
-    print(f"✅ Fetched {len(all_tickers)} total tickers from Polygon")
-    return sorted(all_tickers)
+    print(f"✅ Done. {len(all_tickers)} tickers with market cap > $750M.")
+    return sorted(set(all_tickers))
 
 # ===== GOOGLE SHEET HELPERS =====
 def update_tickers_sheet(gc, tickers):
