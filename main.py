@@ -4,13 +4,14 @@ import time
 import re
 import requests
 import gspread
+import pandas as pd
 from datetime import datetime
 import concurrent.futures
-import yfinance as yf
 
 # ========== CONFIGURATION ==========
 SHEET_NAME = "Trading Log"
 TICKERS_TAB = "tickers"
+SP500_TAB = "sp500"
 SCREENER_TAB = "screener"
 
 RATE_LIMIT_DELAY = 0.1
@@ -22,6 +23,24 @@ API_KEY = os.getenv("API_KEY")
 def get_google_client():
     creds = json.loads(os.getenv("GOOGLE_CREDS_JSON"))
     return gspread.service_account_from_dict(creds)
+
+# ========== S&P 500 SHEET IMPORT ==========
+def update_sp500_sheet(gc):
+    url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+    tables = pd.read_html(url)
+    sp500_df = tables[0]
+    tickers = [t.replace('.', '-') for t in sp500_df["Symbol"].tolist()]
+    ws = gc.open(SHEET_NAME).worksheet(SP500_TAB)
+    ws.clear()
+    ws.append_row(["Symbol"])
+    ws.append_rows([[t] for t in tickers])
+    print(f"✅ Updated S&P 500 list in '{SP500_TAB}' tab ({len(tickers)} tickers).")
+    return set(tickers)
+
+# ========== GENERIC TICKER GETTER FROM ANY TAB ==========
+def get_tickers_from_sheet(gc, tabname):
+    ws = gc.open(SHEET_NAME).worksheet(tabname)
+    return set([t.strip() for t in ws.col_values(1)[1:] if t.strip()])
 
 # ========== MULTI-SUBREDDIT TICKER SCRAPER ==========
 def scrape_tickers_from_subreddit(subreddit):
@@ -72,6 +91,7 @@ def update_tickers_sheet(gc, tickers):
     ws = gc.open(SHEET_NAME).worksheet(TICKERS_TAB)
     print(f"🧹 Clearing and writing {len(tickers)} tickers to the '{TICKERS_TAB}' tab...")
     ws.clear()
+    ws.append_row(["Symbol"])
     ws.append_rows([[t] for t in tickers])
     return tickers
 
@@ -145,31 +165,6 @@ def get_volume_info(ticker):
         return results[0]["v"], None
     return None, None
 
-# ========== ANALYST CONSENSUS (YAHOO FINANCE/YFINANCE) ==========
-def get_analyst_consensus(ticker):
-    try:
-        ticker_obj = yf.Ticker(ticker)
-        info = ticker_obj.info
-        if "recommendationKey" in info:
-            key = info["recommendationKey"]
-            if key in ["buy", "strong_buy"]:
-                return "buy"
-        recs = ticker_obj.recommendations
-        if recs is not None and not recs.empty:
-            latest = recs.iloc[-1]
-            if "To Grade" in latest:
-                grade = latest["To Grade"].lower()
-                if "buy" in grade:
-                    return "buy"
-        return None
-    except Exception as e:
-        if "Too Many Requests" in str(e) or "429" in str(e):
-            print(f"⚠️ Rate limited on {ticker}. Waiting 10s...")
-            time.sleep(10)
-        else:
-            print(f"⚠️ {ticker} analyst consensus not found: {e}")
-        return None
-
 # ========== TECHNICAL ANALYSIS + BUY LOGIC ==========
 def analyze_ticker(ticker):
     try:
@@ -242,47 +237,42 @@ def any_indicator_zero_or_blank(row):
 
 # ========== MAIN ==========
 def main():
-    print("🚀 Launching Reddit multi-subreddit screener bot")
+    print("🚀 Launching Reddit + S&P 500 screener bot")
     gc = get_google_client()
 
+    # Step 1: Update SP500 list to sheet
+    sp500_set = update_sp500_sheet(gc)
+
+    # Step 2: Pull Reddit tickers and update tickers tab
     subreddits = ["wallstreetbets", "investing"]
     all_tickers = set()
     for sub in subreddits:
         all_tickers |= scrape_tickers_from_subreddit(sub)
     all_tickers = sorted(all_tickers)
-
-    if not all_tickers:
-        print("❌ No tickers found! Exiting.")
-        return
-
     update_tickers_sheet(gc, all_tickers)
 
-    print("📊 Analyzing tickers for buy signals...")
+    # Step 3: Get intersection of Reddit tickers and SP500 list
+    reddit_set = get_tickers_from_sheet(gc, TICKERS_TAB)
+    matching_tickers = sorted(sp500_set & reddit_set)
+    print(f"🔎 {len(matching_tickers)} tickers matched S&P 500.")
+    if not matching_tickers:
+        print("❌ No S&P 500 tickers found! Exiting.")
+        return
+
+    # Step 4: Run analysis only on matching tickers
+    print("📊 Analyzing S&P 500 Reddit tickers for buy signals...")
     rows = []
     failures = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        results = executor.map(analyze_ticker_threaded, all_tickers)
+        results = executor.map(analyze_ticker_threaded, matching_tickers)
         for row in results:
             if not any_indicator_zero_or_blank(row):
                 rows.append(row)
             else:
                 failures.append(row[0])
 
-    # ========== ANALYST CONSENSUS FILTER ==========
-    print("🧐 Filtering by analyst consensus ('buy' or better)...")
-    filtered_rows = []
-    for row in rows:
-        ticker = row[0]
-        if row[6] == "✅":
-            consensus = get_analyst_consensus(ticker)
-            if consensus == "buy":
-                filtered_rows.append(row)
-            time.sleep(0.7)  # Delay to avoid rate-limit
-
-    print(f"✅ {len(filtered_rows)} stocks passed consensus filter.")
-
     # RANK AND FLAG TOP 5
-    scored_rows = [(rank_row(row), row) for row in filtered_rows]
+    scored_rows = [(rank_row(row), row) for row in rows]
     scored_rows = [pair for pair in scored_rows if pair[0] != float('-inf')]
     scored_rows.sort(reverse=True, key=lambda x: x[0])
     top_5_indices = set(idx for idx, (_, _) in enumerate(scored_rows[:5]))
