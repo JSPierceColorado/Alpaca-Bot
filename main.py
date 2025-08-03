@@ -9,6 +9,7 @@ import concurrent.futures
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
 # ========== CONFIGURATION ==========
@@ -29,10 +30,6 @@ def get_google_client():
 
 # ========== WSB TICKER SCRAPER ==========
 def scrape_wsb_tickers_all():
-    """
-    Scrape all tickers from as many r/wallstreetbets posts as Reddit JSON API allows.
-    Returns a sorted, deduped list of possible US stock tickers.
-    """
     headers = {'User-Agent': 'Mozilla/5.0 (compatible; WSB-Ticker-Screener/2.0)'}
     url = "https://www.reddit.com/r/wallstreetbets/hot.json"
     params = {"limit": 100}
@@ -79,15 +76,13 @@ def scrape_wsb_tickers_all():
 
 # ========== GOOGLE FINANCE SCRAPERS ==========
 def scrape_google_finance_most_active():
-    """
-    Scrape tickers from Google Finance's Most Active stocks page.
-    """
     print("🌐 Scraping Google Finance Most Active...")
     options = Options()
     options.headless = True
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    driver = webdriver.Chrome(ChromeDriverManager().install(), options=options)
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=options)
 
     url = "https://www.google.com/finance/markets/most-active"
     driver.get(url)
@@ -107,15 +102,13 @@ def scrape_google_finance_most_active():
     return list(tickers)
 
 def scrape_google_finance_trending():
-    """
-    Scrape tickers from Google Finance's Trending tab on the main page.
-    """
     print("🌐 Scraping Google Finance Trending...")
     options = Options()
     options.headless = True
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    driver = webdriver.Chrome(ChromeDriverManager().install(), options=options)
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=options)
 
     url = "https://www.google.com/finance/"
     driver.get(url)
