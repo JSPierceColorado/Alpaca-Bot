@@ -11,8 +11,8 @@ SCREENER_TAB = "screener"
 TICKERS_TAB = "tickers"
 SP1500_TAB = "sp1500"
 
-REDDIT_SUBS = ["wallstreetbets", "investing"]
-REDDIT_LIMIT = 400
+REDDIT_SUBS = ["wallstreetbets", "investing", "thetagang"]
+REDDIT_LIMIT = 800
 
 def get_google_client():
     creds = json.loads(os.getenv("GOOGLE_CREDS_JSON"))
